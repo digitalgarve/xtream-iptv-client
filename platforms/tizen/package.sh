@@ -3,8 +3,8 @@
 #
 #   CERT_PASSWORD=... [VARIANT=_youtube|_autoupdate|_youtube_autoupdate] bash platforms/tizen/package.sh <version> [out-dir]
 #
-# Installs the Tizen Studio CLI, registers the signing profile with platforms/tizen/tizencert.p12 (its password comes from the
-# TIZEN_CERT_PASSWORD secret, passed as CERT_PASSWORD) and writes <out-dir>/xtream-iptv-<version>_tizen.wgt with its .sha256 (out-dir: release).
+# Installs the Tizen Studio CLI, registers the Samsung author/distributor certificates from base64 Actions secrets
+# (CERT_AUTHOR_BASE64, CERT_DISTRIBUTOR_BASE64; their shared password is CERT_PASSWORD) and writes <out-dir>/xtream-iptv-<version>_tizen.wgt with its .sha256 (out-dir: release).
 # Run by the "tizen" job of .github/workflows/release.yml; it works on any Linux machine with curl.
 set -euo pipefail
 
@@ -19,23 +19,36 @@ STUDIO="${ROOT}/tizen-studio"
 DATA="${STUDIO}-data"
 TIZEN="${STUDIO}/tools/ide/bin/tizen"
 PROFILES="${DATA}/profile/profiles.xml"
-SIGNER_PWD="tizenpkcs12passfordsigner"
-CERT_SOURCE="${ROOT}/platforms/tizen/tizencert.p12"
 SIGN_DIR="${TMP}/tizen-sign" # the certificate is copied here: the CLI writes its password file next to it, outside the repository
-CERT="${SIGN_DIR}/tizencert.p12"
+CERT="${SIGN_DIR}/author.p12"
+DISTRIBUTOR_CERT="${SIGN_DIR}/distributor.p12"
 
 if [ -z "${CERT_PASSWORD:-}" ]; then
   echo "::error::Secret TIZEN_CERT_PASSWORD is not set."
   exit 1
 fi
-if [ ! -f "$CERT_SOURCE" ]; then
-  echo "::error::platforms/tizen/tizencert.p12 not found."
+if [ -z "${CERT_AUTHOR_BASE64:-}" ] || [ -z "${CERT_DISTRIBUTOR_BASE64:-}" ]; then
+  echo "::error::Set TIZEN_AUTHOR_CERT_BASE64 and TIZEN_DISTRIBUTOR_CERT_BASE64 to the matching Samsung certificates."
   exit 1
 fi
 if [ ! -f "${ROOT}/dist/config.xml" ]; then
   echo "::error::dist/config.xml not found: run npm run build:tizen first."
   exit 1
 fi
+
+umask 077
+mkdir -p "$SIGN_DIR"
+printf '%s' "$CERT_AUTHOR_BASE64" | base64 --decode > "$CERT"
+printf '%s' "$CERT_DISTRIBUTOR_BASE64" | base64 --decode > "$DISTRIBUTOR_CERT"
+export CERT_PASSWORD
+for certificate in "$CERT" "$DISTRIBUTOR_CERT"; do
+  # OpenSSL 3+ needs the legacy provider to read older RC2-encrypted PKCS#12 files.
+  if ! openssl pkcs12 -in "$certificate" -passin env:CERT_PASSWORD -noout 2>/dev/null &&
+     ! openssl pkcs12 -legacy -in "$certificate" -passin env:CERT_PASSWORD -noout; then
+    echo "::error::Samsung certificate cannot be opened with TIZEN_CERT_PASSWORD: $(basename "$certificate")"
+    exit 1
+  fi
+done
 
 trap 'echo "--- Tizen CLI log ---"; cat "${DATA}/cli/logs/cli.log" 2>/dev/null || true' ERR
 
@@ -49,34 +62,25 @@ if [ ! -x "$TIZEN" ]; then
   rm "${TMP}/tizen-installer"
 fi
 
-# Signing profile
-mkdir -p "$SIGN_DIR"
-cp "$CERT_SOURCE" "$CERT"
-# Run once per variant (release workflow): the profile is added the first time only, remembered by a marker file. (Do not test the
-# output of `security-profiles list`: it prints paths, and a path with "xtream" in it made the check pass without a profile, so the
-# 1.4.0 widgets were packaged unsigned.)
-PROFILE_MARK="${DATA}/.profile-${TIZEN_PROFILE}-added"
-if [ ! -f "$PROFILE_MARK" ]; then
-  "$TIZEN" security-profiles add -n "$TIZEN_PROFILE" -a "$CERT" -p "$CERT_PASSWORD"
-  mkdir -p "$DATA"
-  touch "$PROFILE_MARK"
-fi
+# Refresh on every invocation: cached profiles may reference old certificates or temporary paths.
+# Removal may fail on the first run because the profile does not exist yet; adding must succeed.
+"$TIZEN" security-profiles remove -n "$TIZEN_PROFILE" >/dev/null 2>&1 || true
+"$TIZEN" security-profiles add -n "$TIZEN_PROFILE" -a "$CERT" -p "$CERT_PASSWORD" -d "$DISTRIBUTOR_CERT" -dp "$CERT_PASSWORD"
 "$TIZEN" cli-config "profiles.path=${PROFILES}"
-chmod 755 "$PROFILES"
+chmod 600 "$PROFILES"
 
 # Replace the password-file references with the actual passwords so signing is non-interactive.
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 CERT_PWD_ESC="$(esc "$CERT_PASSWORD")"
 sed -i "s|${CERT%.p12}.pwd|${CERT_PWD_ESC}|g" "$PROFILES"
-sed -i "s|${DATA}/tools/certificate-generator/certificates/distributor/tizen-distributor-signer.pwd|${SIGNER_PWD}|g" "$PROFILES"
-sed -i "s|password=\"\"|password=\"${SIGNER_PWD}\"|g" "$PROFILES"
+sed -i "s|${DISTRIBUTOR_CERT%.p12}.pwd|${CERT_PWD_ESC}|g" "$PROFILES"
+sed -i "s|password=\"\"|password=\"${CERT_PWD_ESC}\"|g" "$PROFILES"
 
 # Safety net: answers any password prompt that `tizen package` still raises.
 cat > "${TMP}/package.exp" <<'EXP'
 set timeout 300
 spawn {*}$argv
 expect {
-  -nocase -re {distributor[^\n]*password[^\n]*:} { send "tizenpkcs12passfordsigner\r"; exp_continue }
   -nocase -re {password[^\n]*:} { send "$env(CERT_PASSWORD)\r"; exp_continue }
   timeout { puts "timeout waiting for tizen package"; exit 1 }
   eof

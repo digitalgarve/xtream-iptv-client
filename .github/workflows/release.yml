@@ -13,7 +13,7 @@ name: Release
 #   - xtream-iptv-<version>_androidtv.apk, _firetv.apk; _androidtv_autoupdate.apk, _firetv_autoupdate.apk update themselves
 #                                       Android TV / Fire TV (Capacitor + ExoPlayer)  (+ .sha256)
 #
-# Secrets: TIZEN_CERT_PASSWORD (password of platforms/tizen/tizencert.p12); ANDROID_KEYSTORE_PASSWORD (and optionally ANDROID_KEY_ALIAS,
+# Secrets: TIZEN_CERT_PASSWORD, TIZEN_AUTHOR_CERT_BASE64, TIZEN_DISTRIBUTOR_CERT_BASE64 (Samsung signing profile); ANDROID_KEYSTORE_PASSWORD (and optionally ANDROID_KEY_ALIAS,
 # ANDROID_KEY_PASSWORD) for platforms/android/release.keystore — without them the APKs are signed with a debug key.
 # TMDB and Trakt keys are not part of the build: they are typed in the app Settings.
 on:
@@ -75,6 +75,8 @@ jobs:
       - name: Build and sign the widgets
         env:
           CERT_PASSWORD: ${{ secrets.TIZEN_CERT_PASSWORD }}
+          CERT_AUTHOR_BASE64: ${{ secrets.TIZEN_AUTHOR_CERT_BASE64 }}
+          CERT_DISTRIBUTOR_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_CERT_BASE64 }}
         run: |
           for variant in "" "_youtube" "_autoupdate" "_youtube_autoupdate"; do
             flags=""

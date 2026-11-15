@@ -6,7 +6,7 @@ const flush = async () => {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 };
 
-function setup({ autoplayNext = true, duration = 3000, audioLanguage = '' } = {}) {
+function setup({ autoplayNext = true, duration = 3000, audioLanguage = '', audioSelection = null } = {}) {
   const clock = { time: 0, duration };
   let handlers = null;
   const engine = {
@@ -34,6 +34,7 @@ function setup({ autoplayNext = true, duration = 3000, audioLanguage = '' } = {}
   const page = createPlayerPage(ctx, {
     type: 'series',
     audioLanguage,
+    audioSelection,
     entryKey: 'series:1',
     title: 'S',
     playlist: [
@@ -61,6 +62,50 @@ describe('player notices', () => {
     handlers().onPrepared();
     await flush();
     expect(engine.setAudioTrack).toHaveBeenCalledWith(7);
+    page.destroy();
+  });
+
+  test('preview selection waits for complete native tracks and confirms an asynchronous switch', async () => {
+    const selection = { streamId: 'e1', ext: 'mp4', language: 'de', tracks: [{ language: 'eng' }, { label: 'German AC3' }] };
+    const { page, engine, handlers } = setup({ audioSelection: selection });
+    let tracks = [{ index: 4, language: 'eng', current: true }];
+    engine.getAudioTracks = () => tracks;
+    engine.setAudioTrack = jest.fn().mockResolvedValue(true);
+    page.mount();
+    await flush();
+    handlers().onPrepared();
+    await flush();
+    expect(engine.setAudioTrack).not.toHaveBeenCalled();
+    tracks = [...tracks, { index: 9, language: 'und', current: false }];
+    jest.advanceTimersByTime(5000);
+    await flush();
+    expect(engine.setAudioTrack).toHaveBeenCalledWith(9);
+    tracks = tracks.map((track) => ({ ...track, current: track.index === 9 }));
+    jest.advanceTimersByTime(5000);
+    await flush();
+    expect(engine.setAudioTrack).toHaveBeenCalledTimes(1);
+    // The next episode must not inherit the previous file's track positions.
+    handlers().onEnded();
+    await flush();
+    tracks = [{ index: 0, current: true }, { index: 2, current: false }];
+    handlers().onPrepared();
+    await flush();
+    expect(engine.setAudioTrack).toHaveBeenCalledTimes(1);
+    page.destroy();
+  });
+
+  test('a rejected preview switch is reported instead of silently accepted', async () => {
+    const selection = { streamId: 'e1', ext: 'mp4', language: 'de', tracks: [{ language: 'eng' }, { label: 'German AC3' }] };
+    const { page, engine, handlers } = setup({ audioSelection: selection });
+    engine.getAudioTracks = () => [{ index: 0, language: 'eng', current: true }, { index: 8, language: 'und' }];
+    engine.setAudioTrack = jest.fn().mockResolvedValue(false);
+    page.mount();
+    await flush();
+    handlers().onPrepared();
+    await flush();
+    jest.advanceTimersByTime(60000);
+    await flush();
+    expect(document.body.textContent).toContain('Could not switch audio track');
     page.destroy();
   });
 

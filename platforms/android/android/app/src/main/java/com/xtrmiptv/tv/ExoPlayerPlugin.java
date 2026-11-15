@@ -56,13 +56,15 @@ public class ExoPlayerPlugin extends Plugin {
         final int index;
         final String language;
         final String label;
+        final String id;
         final boolean selected;
 
-        TrackRef(TrackGroup group, int index, String language, String label, boolean selected) {
+        TrackRef(TrackGroup group, int index, String language, String label, String id, boolean selected) {
             this.group = group;
             this.index = index;
             this.language = language;
             this.label = label;
+            this.id = id;
             this.selected = selected;
         }
     }
@@ -168,7 +170,7 @@ public class ExoPlayerPlugin extends Plugin {
             for (int i = 0; i < group.length; i++) {
                 if (!group.isTrackSupported(i)) continue;
                 Format format = group.getTrackFormat(i);
-                TrackRef ref = new TrackRef(group.getMediaTrackGroup(), i, format.language == null ? "" : format.language, format.label == null ? "" : format.label, group.isTrackSelected(i));
+                TrackRef ref = new TrackRef(group.getMediaTrackGroup(), i, format.language == null ? "" : format.language, format.label == null ? "" : format.label, format.id == null ? "" : format.id, group.isTrackSelected(i));
                 if (type == C.TRACK_TYPE_AUDIO) audioTracks.add(ref);
                 else textTracks.add(ref);
             }
@@ -179,6 +181,7 @@ public class ExoPlayerPlugin extends Plugin {
             track.put("index", i);
             track.put("language", audioTracks.get(i).language);
             track.put("label", audioTracks.get(i).label);
+            track.put("id", audioTracks.get(i).id);
             track.put("current", audioTracks.get(i).selected);
             audio.put(track);
         }

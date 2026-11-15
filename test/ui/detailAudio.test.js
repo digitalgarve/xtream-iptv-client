@@ -19,6 +19,8 @@ test('loads available languages before playback, deduplicates and returns the se
   await audio.zone.onActivate();
   expect(ctx.dialogs.choose.mock.calls[0][0].options.map((o) => o.value)).toEqual(['', 'de', 'en']);
   expect(audio.selectionFor('movie', movie)).toBe('de');
+  expect(audio.trackSelectionFor('movie', movie)).toEqual({ language: 'de', streamId: 1, ext: 'mkv', tracks: [{ language: 'ger' }, { label: 'German AC3' }, { language: 'eng' }] });
+  expect(audio.trackSelectionFor('movie', { id: 2 })).toBeNull();
   expect(audio.selectionFor('movie', { id: 2 })).toBe('');
   audio.update('movie', movie);
   expect(readAudioTracks).toHaveBeenCalledTimes(1);

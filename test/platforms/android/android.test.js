@@ -49,7 +49,7 @@ test('ExoPlayer engine: commands to the plugin, events kept for the synchronous 
   expect(handlers.onPrepared).toHaveBeenCalled();
   expect(handlers.onError).toHaveBeenCalledWith('ERROR_CODE_IO_BAD_HTTP_STATUS');
   expect([engine.getTime(), engine.getDuration(), engine.getBufferedEnd()]).toEqual([1500, 60000, 9000]);
-  expect(engine.getAudioTracks()).toEqual([{ index: 0, language: 'ita', label: 'Italiano AC3', current: true }, { index: 1, language: 'eng', label: '', current: false }]);
+  expect(engine.getAudioTracks()).toEqual([{ index: 0, language: 'ita', label: 'Italiano AC3', containerId: '', current: true }, { index: 1, language: 'eng', label: '', containerId: '', current: false }]);
   expect(engine.getSubtitleTracks()).toEqual([{ index: 0, language: 'ita' }]);
   expect(engine.setAspect('zoom')).toBe(true);
   engine.setSubtitleTrack(null);

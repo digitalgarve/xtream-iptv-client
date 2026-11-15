@@ -10,6 +10,7 @@ export function createDetailAudio(ctx) {
   let pending = null;
   let choices = [];
   let selected = '';
+  let sourceTracks = [];
   let episode = '';
   const field = createSelectField({
     id: 'detailAudio', label: t('detail.audio'), text: '',
@@ -44,6 +45,7 @@ export function createDetailAudio(ctx) {
       controller = new AbortController();
       const current = controller;
       choices = [];
+      sourceTracks = [];
       selected = '';
       unknown = false;
       episode = type === 'series' ? ` (S${target.season}E${target.number})` : '';
@@ -55,6 +57,7 @@ export function createDetailAudio(ctx) {
           if (current.signal.aborted) return;
           const tracks = await readAudioTracks(client.streamUrl(type, target.id, target.ext), (url, init) => (ctx.fetch || fetch)(url, { ...init, signal: current.signal }));
           if (controller !== current) return;
+          sourceTracks = tracks || [];
           unknown = !tracks || tracks.some((track) => !audioLanguage(track));
           choices = Array.from(new Map((tracks || []).filter((track) => audioLanguage(track)).map((track) => [audioLanguage(track), { label: audioLabel(track, 0, ''), value: audioLanguage(track) }])).values());
         } catch {
@@ -64,6 +67,9 @@ export function createDetailAudio(ctx) {
           if (controller === current) show();
         }
       })();
+    },
+    trackSelectionFor(type, target) {
+      return this.selectionFor(type, target) ? { language: selected, tracks: sourceTracks, streamId: target.id, ext: target.ext || '' } : null;
     },
     selectionFor(type, target) {
       return key === `${type}:${target.id}:${target.ext || ''}` ? selected : '';

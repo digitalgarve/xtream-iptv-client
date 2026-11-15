@@ -124,13 +124,14 @@ export function createHtml5Engine({ demux = isDev() } = {}) {
     },
     getAudioTracks() {
       const list = video && video.audioTracks ? Array.from(video.audioTracks) : [];
-      return list.map((track, index) => ({ index, language: track.language || '', label: track.label || '', current: Boolean(track.enabled) }));
+      return list.map((track, index) => ({ index, language: track.language || '', label: track.label || '', containerId: track.id || '', current: Boolean(track.enabled) }));
     },
     setAudioTrack(index) {
-      if (!video || !video.audioTracks) return;
+      if (!video || !video.audioTracks || !video.audioTracks[index]) return false;
       Array.from(video.audioTracks).forEach((track, i) => {
         track.enabled = i === index;
       });
+      return Boolean(video.audioTracks[index].enabled);
     },
     // Like AVPlay, the page draws the line: the track is "hidden" and its cues are handed to the page.
     setSubtitleTrack(index) {

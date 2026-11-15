@@ -110,6 +110,7 @@ export function createDetailPage(ctx, params) {
       playlist,
       index: startIndex || 0,
       restart,
+      audioSelection: audio.trackSelectionFor(entry.type, playlist[startIndex || 0]),
       audioLanguage: audio.selectionFor(entry.type, playlist[startIndex || 0]),
       live: params.live || null,
       epgChannelId: entry.epgChannelId,

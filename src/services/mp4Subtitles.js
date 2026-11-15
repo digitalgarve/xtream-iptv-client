@@ -163,7 +163,9 @@ export async function probeMp4(reader, report = () => undefined, { audioOnly = f
         const version = mdhd ? view.getUint8(mdhd.start) : 0;
         const language = mdhd ? packedLanguage(view.getUint16(mdhd.start + (version === 1 ? 32 : 20))) : '';
         const name = utf8(new Uint8Array(view.buffer, view.byteOffset + hdlr.start + 24, Math.max(0, hdlr.end - hdlr.start - 24))).split('\u0000')[0];
-        found.push({ language, label: name });
+        const tkhd = find(view, trak, 'tkhd');
+        const id = tkhd ? String(view.getUint32(tkhd.start + (view.getUint8(tkhd.start) === 1 ? 20 : 12))) : '';
+        found.push({ id, language, label: name });
         return;
       }
       if (['sbtl', 'text', 'subt'].indexOf(handler) < 0) return;

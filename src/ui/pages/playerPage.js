@@ -8,6 +8,7 @@ import { log } from '../../core/logger.js';
 import { platform } from '../../platform/index.js';
 import { createPlayerController, formatClock, neighborEpisode, audioLabel, audioLanguage, nextAspect, scrubTarget, positionFromPointer, preferredAudioTrack } from '../../services/playerController.js';
 import { ASPECT_MODES } from '../../services/playerEngines.js';
+import { resolveAudioSelection } from '../../services/audioSelection.js';
 import { youtubeStreamUrl } from '../../services/trailer.js';
 import { formatClockTime } from '../../core/clock.js';
 import { watchKey, shouldResume } from '../../services/watchStore.js';
@@ -467,6 +468,29 @@ export function createPlayerPage(ctx, params) {
     try {
       const tracks = engine.getAudioTracks ? engine.getAudioTracks() : [];
       if (isLive) setVisible('subtitles', Boolean(engine.getSubtitleTracks && engine.getSubtitleTracks().length));
+      const selection = params.audioSelection;
+      const exactSource = selection && selection.streamId === current().id && selection.ext === (current().ext || '');
+      if (exactSource && !audioPicked) {
+        const target = resolveAudioSelection(tracks, selection);
+        if (target && target.current) {
+          audioPicked = true;
+          audioTrack = target.index;
+        } else if (target && engine.setAudioTrack) {
+          await engine.setAudioTrack(target.index);
+          if (destroyed || token !== loadToken) return;
+          // Native selection may complete asynchronously. Confirm it on the next track event/poll.
+          const confirmed = engine.getAudioTracks().find((track) => track.index === target.index && track.current);
+          if (confirmed) {
+            audioPicked = true;
+            audioTrack = target.index;
+          }
+        }
+        if (!audioPicked && Date.now() >= trackCheckUntil) {
+          audioPicked = true;
+          ctx.notices.warning(t('player.audio.failed'), { scope: 'playback', key: 'track' });
+        }
+        return;
+      }
       if (tracks.length > 1 && !audioPicked) {
         audioPicked = true;
         const pick = preferredAudioTrack(params.audioLanguage ? tracks.map((track) => ({ ...track, language: audioLanguage(track) })) : tracks, params.audioLanguage || i18n.getLocale());
@@ -480,6 +504,10 @@ export function createPlayerPage(ctx, params) {
       }
     } catch (err) {
       log.warn('Track check failed', err && err.message);
+      if (params.audioSelection && !audioPicked && Date.now() >= trackCheckUntil) {
+        audioPicked = true;
+        ctx.notices.warning(t('player.audio.failed'), { scope: 'playback', key: 'track' });
+      }
     }
   }
 
@@ -554,7 +582,7 @@ export function createPlayerPage(ctx, params) {
         controller.togglePause();
       }
     }
-    if (state.status === 'playing' && Date.now() >= trackCheckAt && Date.now() < trackCheckUntil) checkTracks();
+    if (state.status === 'playing' && Date.now() >= trackCheckAt && (Date.now() < trackCheckUntil || (params.audioSelection && params.audioSelection.streamId === current().id && !audioPicked))) checkTracks();
     if ((state.status === 'paused' || state.status === 'error' || state.status === 'recovering') && state.status !== lastStatus) showControls();
     if (state.status === 'error' && lastStatus !== 'error') showPlayerError(`${t('error.PLAYER')} ${state.error || ''}`.trim());
     else if (state.status === 'playing') closePlayerError();

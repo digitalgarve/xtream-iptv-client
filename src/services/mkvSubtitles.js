@@ -217,7 +217,7 @@ export async function probeMkv(reader, report = () => undefined, { audioOnly = f
         cues: [],
       };
     });
-  if (audioOnly) return { tracks: all.filter((track) => track.type === 2).map((track) => ({ language: track.language, label: track.name })) };
+  if (audioOnly) return { tracks: all.filter((track) => track.type === 2).map((track) => ({ id: String(track.number), language: track.language, label: track.name })) };
   const tracks = all.filter((track) => track.type === SUBTITLE_TYPE && TEXT_CODECS.indexOf(track.codec) >= 0);
   if (!tracks.length) {
     const codecs = all.filter((track) => track.type === SUBTITLE_TYPE).map((track) => track.codec);

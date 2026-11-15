@@ -146,14 +146,14 @@ test('live: Subtitles only when the stream carries subtitle tracks; play after a
 });
 
 test('audio listed late: looked at again after the start; the language of the app is chosen once, a choice of the user stays', async () => {
-  const { page, engine } = await setup();
+  const { page, ctx, engine } = await setup();
   let tracks = [];
   engine.getAudioTracks = () => tracks;
   engine.setAudioTrack = jest.fn((index) => { tracks = tracks.map((track) => ({ ...track, current: track.index === index })); });
   engine.handlers.onPrepared();
   engine.handlers.onBufferingDone();
   await wait();
-  expect(visible(page)).not.toContain('Audio');
+  expect(visible(page)).toContain('Audio');
   // The stream lists its audio later (an HLS audio group): seen at the next look; the app speaks English: the English one is chosen.
   tracks = [{ index: 0, language: 'ita', current: true }, { index: 1, language: 'eng', current: false }];
   const realNow = Date.now;
@@ -163,11 +163,68 @@ test('audio listed late: looked at again after the start; the language of the ap
   expect(visible(page)).toContain('Audio');
   expect(engine.setAudioTrack).toHaveBeenCalledWith(1);
   // The user goes back to Italian: the next looks leave it.
-  engine.setAudioTrack(0);
+  ctx.dialogs.choose.mockResolvedValueOnce(0);
+  openAudioWithRemote(page);
+  await wait(200);
   Date.now = () => start + 12000;
   await wait(700);
   expect(engine.setAudioTrack).toHaveBeenCalledTimes(2);
   expect(tracks.find((track) => track.current).language).toBe('ita');
   Date.now = realNow;
   page.destroy();
+});
+
+function openAudioWithRemote(page) {
+  page.onAction(Action.ENTER);
+  for (let i = 0; i < 20; i += 1) {
+    const focused = page.el.querySelector('.player-btn.focused');
+    if (focused && focused.getAttribute('aria-label') === 'Audio') {
+      page.onAction(Action.ENTER);
+      return;
+    }
+    page.onAction(Action.RIGHT);
+  }
+  throw new Error('Audio button is not reachable with the remote');
+}
+
+test.each(['empty', 'throws'])('audio button remains reachable with %s track information', async (mode) => {
+  const { page, engine, ctx } = await setup();
+  engine.getAudioTracks = () => { if (mode === 'throws') throw new Error('not ready'); return []; };
+  const warning = jest.spyOn(ctx.notices, 'warning');
+  try {
+    expect(visible(page)).toContain('Audio');
+    openAudioWithRemote(page);
+    await wait();
+    expect(warning).toHaveBeenCalledWith('No audio track information available', expect.any(Object));
+    expect(ctx.dialogs.choose).not.toHaveBeenCalled();
+  } finally { page.destroy(); }
+});
+
+test('opening audio after the polling window reads a single unnamed track and marks it current', async () => {
+  const { page, engine, ctx } = await setup();
+  const now = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 120000);
+  engine.getAudioTracks = jest.fn(() => [{ index: 7, language: '', current: true }]);
+  ctx.dialogs.choose.mockResolvedValueOnce(null);
+  try {
+    openAudioWithRemote(page);
+    await wait();
+    expect(engine.getAudioTracks).toHaveBeenCalled();
+    expect(ctx.dialogs.choose).toHaveBeenCalledWith({ title: 'Audio', options: [{ label: 'Audio track 1', value: 7 }], selected: 7 });
+  } finally { now.mockRestore(); page.destroy(); }
+});
+
+test.each(['false', 'reject'])('failed audio switch (%s) never reports success', async (mode) => {
+  const { page, engine, ctx } = await setup();
+  engine.getAudioTracks = () => [{ index: 0, language: 'eng', current: true }, { index: 2, language: 'deu' }];
+  engine.setAudioTrack = mode === 'false' ? jest.fn(() => false) : jest.fn(async () => { throw new Error('refused'); });
+  ctx.dialogs.choose.mockResolvedValueOnce(2);
+  const info = jest.spyOn(ctx.notices, 'info');
+  const warning = jest.spyOn(ctx.notices, 'warning');
+  try {
+    openAudioWithRemote(page);
+    await wait(220);
+    expect(engine.setAudioTrack).toHaveBeenCalledWith(2);
+    expect(warning).toHaveBeenCalledWith('Could not switch audio track', expect.any(Object));
+    expect(info).not.toHaveBeenCalled();
+  } finally { page.destroy(); }
 });

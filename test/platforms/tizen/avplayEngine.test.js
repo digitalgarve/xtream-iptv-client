@@ -76,3 +76,13 @@ test('subtitles: the track is chosen while playing, without reopening; off only 
   expect(lines).toHaveLength(1);
   engine.stop();
 });
+
+test('audio selection reports AVPlay success and failure to the caller', () => {
+  const setSelectTrack = jest.fn();
+  global.webapis = { avplay: { open() {}, prepareAsync() {}, setDisplayRect() {}, setSelectTrack } };
+  const engine = createAvPlayEngine();
+  expect(engine.setAudioTrack(3)).toBe(true);
+  expect(setSelectTrack).toHaveBeenCalledWith('AUDIO', 3);
+  setSelectTrack.mockImplementation(() => { throw new Error('InvalidStateError'); });
+  expect(engine.setAudioTrack(3)).toBe(false);
+});

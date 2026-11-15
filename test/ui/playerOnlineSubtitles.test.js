@@ -242,3 +242,15 @@ test('an MP4 with tx3g tracks: the app reads them and draws the chosen one', asy
   expect(s.page.el.querySelector('.player-subtitle').textContent).toBe('Hello\nworld, again');
   s.page.destroy();
 }, 10000);
+
+test('movie audio control stays visible before any tracks are reported', async () => {
+  const { page, ctx } = setup({ fetch: async () => null });
+  try {
+    await wait();
+    const audio = page.el.querySelector('[aria-label="Audio"]');
+    expect(audio).not.toBeNull();
+    expect(audio.style.display).not.toBe('none');
+    expect(page.el.querySelector('[aria-label="Subtitles"]').style.display).not.toBe('none');
+    expect(ctx.dialogs.choose).not.toHaveBeenCalled();
+  } finally { page.destroy(); }
+});

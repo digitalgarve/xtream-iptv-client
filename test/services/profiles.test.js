@@ -86,17 +86,17 @@ test('leaving a kids profile: the parental PIN of any profile not for kids', asy
   expect(await verify.verifyParentalAny('3333')).toBe(false);
 });
 
-test('settings of a profile: its own language, everything else shared; the main profile writes the shared one', async () => {
+test.each(['it-IT', 'de-DE'])('settings of a profile: its own language (%s), everything else shared; the main profile writes the shared one', async (language) => {
   const { db, profiles } = await setup();
   const settings = new SettingsService(db);
   await settings.update({ language: 'en-US', bufferSeconds: 10 });
   const other = await profiles.add({ name: 'Sara', avatar: 'fish' }, { name: 'Me' });
   const view = profileSettings(settings, other, profiles);
   expect((await view.get()).language).toBe('en-US'); // none of its own yet
-  await view.update({ language: 'it-IT', bufferSeconds: 20 });
-  expect((await view.get())).toMatchObject({ language: 'it-IT', bufferSeconds: 20 });
+  await view.update({ language, bufferSeconds: 20 });
+  expect((await view.get())).toMatchObject({ language, bufferSeconds: 20 });
   expect((await settings.get())).toMatchObject({ language: 'en-US', bufferSeconds: 20 }); // shared stays
-  expect((await profiles.get(other.id)).language).toBe('it-IT');
+  expect((await profiles.get(other.id)).language).toBe(language);
   expect(profileSettings(settings, await profiles.get(MAIN_ID), profiles)).toBe(settings);
   expect(await kvGet(db, 'profiles', null)).toHaveLength(2);
 });

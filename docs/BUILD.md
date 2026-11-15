@@ -192,7 +192,7 @@ src/
   services/   Xtream client, sync, grouping, title normalisation, TMDB, Trakt, EPG, player engines
   ui/         focus manager, router, pages; components/ (cards, carousels, dialogs, guide, top bar) built from
               atoms/ (buttons, fields, chips, rows, sidebar entries...: see src/ui/atoms/README.md)
-  i18n/       en-US and it-IT dictionaries
+  i18n/       en-US, it-IT and de-DE dictionaries
   styles/     SCSS, one file per part of the UI; styles/atoms/ the styles of the atomic components
   platform/   the contract of a platform adapter (contract.js) and the adapter of the build (index.js)
 platforms/

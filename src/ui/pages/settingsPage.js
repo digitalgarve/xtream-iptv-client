@@ -114,7 +114,7 @@ export function optionRow({ labelKey, key, options, format = String, ctx }) {
 
 
 export function createSettingsPage(ctx) {
-  const language = (v) => (v === 'auto' ? t('settings.language.auto') : v);
+  const language = (v) => (v === 'auto' ? t('settings.language.auto') : v === 'de-DE' ? 'Deutsch' : v);
   const seconds = (v) => `${v} s`;
   const now = new Date();
   const timeName = (v) => (v === 'auto' ? t('settings.format.auto') : `${v === '12h' ? t('settings.time.12h') : t('settings.time.24h')} (${formatClockTime(now, v, i18n.getLocale())})`);

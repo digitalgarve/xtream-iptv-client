@@ -16,7 +16,7 @@ marked **(you)** depend on the seller account.
 | Supported webOS | webOS 6.0 (2021 TVs) and newer |
 | Category | `Entertainment` (sub-category: video / media player, where offered) |
 | Price | Free; no in-app purchases, no ads |
-| Languages | English (default), Italian |
+| Languages | English (default), Italian, German |
 | Countries | all the countries the seller wants (no regional content) |
 | Seller / support e-mail **(you)** | the seller account's data |
 | Support / homepage URL | `https://github.com/andreadegiovine/xtream-iptv-client` |

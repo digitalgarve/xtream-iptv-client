@@ -1,10 +1,12 @@
 import en from './locales/en-US.json';
 import it from './locales/it-IT.json';
+import de from './locales/de-DE.json';
 
 export const DEFAULT_LOCALE = 'en-US';
-export const SUPPORTED_LOCALES = ['en-US', 'it-IT'];
+export const SUPPORTED_LOCALES = ['en-US', 'it-IT', 'de-DE'];
 
 export function detectLocale(language) {
+  if (String(language ?? '').toLowerCase().startsWith('de')) return 'de-DE';
   return String(language ?? '').toLowerCase().startsWith('it') ? 'it-IT' : 'en-US';
 }
 
@@ -46,5 +48,5 @@ export function createI18n({ locales, fallback = DEFAULT_LOCALE, locale = fallba
   };
 }
 
-export const i18n = createI18n({ locales: { 'en-US': en, 'it-IT': it } });
+export const i18n = createI18n({ locales: { 'en-US': en, 'it-IT': it, 'de-DE': de } });
 export const t = (key, params) => i18n.t(key, params);

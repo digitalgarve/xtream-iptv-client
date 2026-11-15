@@ -74,6 +74,18 @@ Every platform has a script that turns `dist/` into the release package. They ar
 
 ### Tizen
 
+To build a signed TV package on GitHub without publishing a release:
+
+1. Add the repository Actions secret `TIZEN_CERT_PASSWORD` under **Settings → Secrets and variables → Actions**.
+   It must be the password of the existing `platforms/tizen/tizencert.p12` certificate.
+2. Push `.github/workflows/tizen.yml` to the default branch, then open **Actions → Build Tizen TV → Run workflow** and choose the branch to build.
+3. Download the **tizen-tv** artifact from the completed run and unzip it. It contains `xtream-iptv-<version>_tizen.wgt` and its SHA-256 checksum.
+
+The workflow uses the version in `package.json`, runs lint and tests, and builds the standard package (no in-app trailer service or automatic updates).
+Installing on a Samsung TV may require re-signing with your own Samsung certificate profile; see the [installation guide](../platforms/tizen/README.md).
+
+For a local build on Linux:
+
 ```bash
 npm run build:tizen
 CERT_PASSWORD=<password> bash platforms/tizen/package.sh 1.0.0

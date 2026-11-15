@@ -11,7 +11,8 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
   let cache = null;
   let pending = null;
 
-  const same = (a, b) => a.id === b.id && a.baseUrl === b.baseUrl && a.username === b.username && a.password === b.password && a.playlistUrl === b.playlistUrl && a.epgUrl === b.epgUrl && a.liveFormat === b.liveFormat && JSON.stringify(a.allowedFormats) === JSON.stringify(b.allowedFormats);
+  const same = (a, b) => a.id === b.id && a.baseUrl === b.baseUrl && a.username === b.username && a.password === b.password && a.playlistUrl === b.playlistUrl && a.epgUrl === b.epgUrl;
+  const sameFormats = (a, b) => a.liveFormat === b.liveFormat && JSON.stringify(a.allowedFormats) === JSON.stringify(b.allowedFormats);
 
   function release() {
     if (cache) {
@@ -33,10 +34,14 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
       release();
       return null;
     }
-    if (cache && sameSet(cache.active, active)) return cache;
-    release();
-    const db = await openDb(provider.id);
-    db.onversionchange = () => db.close();
+    let db = cache && sameSet(cache.active, active) ? cache.db : null;
+    if (db && cache.active.every((p, i) => sameFormats(p, active[i]))) return cache;
+    // Format updates refresh clients without closing the database retained by open pages.
+    if (!db) {
+      release();
+      db = await openDb(provider.id);
+      db.onversionchange = () => db.close();
+    }
     // Several providers active: one catalog (the main one's database, catalogUnion.js) and a client that routes each title to its provider.
     const mainClient = makeClient(provider);
     const others = active.slice(1).map((p) => ({ slot: p.slot, provider: p, client: makeClient(p) }));

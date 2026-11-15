@@ -1,6 +1,7 @@
 import { dbGet, dbGetAllKeys, dbPut, dbClear, dbDeleteMany, transactionDone } from '../core/idb.js';
 import { openProviderDb } from '../db/providerDb.js';
 import { XtreamClient } from './xtreamClient.js';
+import { createUnionClient } from './unionClient.js';
 import { createTmdbClient } from './tmdbClient.js';
 import { mergeGenres } from './genres.js';
 import { openAppDb } from '../db/appDb.js';
@@ -236,7 +237,7 @@ export async function restoreTmdbGenres({ db, appDb, titles = null, fresh = null
  * Shared by the worker and the main-thread fallback. `phase`: "tmdb" downloads the metadata, "genres" asks the
  * provider for the genres of titles still without any.
  */
-export async function runGenreBackfillForProvider({ provider, tmdbKey, language, signal, gate, emit = () => {}, limit, phase = 'genres', force = false }) {
+export async function runGenreBackfillForProvider({ provider, others = [], tmdbKey, language, signal, gate, emit = () => {}, limit, phase = 'genres', force = false }) {
   let db = null;
   let appDb = null;
   let done = 0;
@@ -253,8 +254,11 @@ export async function runGenreBackfillForProvider({ provider, tmdbKey, language,
       }
     } else if (provider.type !== 'm3u') {
       // The provider's genres come from its per-title details: a playlist has none.
-      const xtream = new XtreamClient({ baseUrl: provider.baseUrl, username: provider.username, password: provider.password });
-      await xtream.authenticate().catch(() => undefined);
+      const own = new XtreamClient({ baseUrl: provider.baseUrl, username: provider.username, password: provider.password });
+      await own.authenticate().catch(() => undefined);
+      // Several providers active: each title is asked to the provider it comes from (playlists have no details: left as they are).
+      const more = others.filter((o) => o.type !== 'm3u').map((o) => ({ slot: o.slot, client: new XtreamClient({ baseUrl: o.baseUrl, username: o.username, password: o.password }) }));
+      const xtream = more.length ? createUnionClient(own, more) : own;
       done = await runGenreBackfill({ db, xtream, tmdb: null, language, signal, gate, emit, limit });
     }
   } finally {

@@ -1,5 +1,6 @@
 import { openProviderDb } from '../db/providerDb.js';
 import { createProviderClient } from './providerTypes.js';
+import { createUnionClient } from './unionClient.js';
 
 /**
  * Shared handle on the active provider: its database (opened once, kept open) and an API client that
@@ -23,17 +24,25 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
     cache = null;
   }
 
+  const sameSet = (a, b) => a.length === b.length && a.every((p, i) => same(p, b[i]));
+
   async function load() {
-    const provider = await providers.getActive();
+    const active = providers.listActive ? await providers.listActive() : [await providers.getActive()].filter(Boolean);
+    const provider = active[0] || null;
     if (!provider) {
       release();
       return null;
     }
-    if (cache && same(cache.provider, provider)) return cache;
+    if (cache && sameSet(cache.active, active)) return cache;
     release();
     const db = await openDb(provider.id);
     db.onversionchange = () => db.close();
-    cache = { provider, db, client: makeClient(provider), auth: null };
+    // Several providers active: one catalog (the main one's database, catalogUnion.js) and a client that routes each title to its provider.
+    const mainClient = makeClient(provider);
+    const others = active.slice(1).map((p) => ({ slot: p.slot, provider: p, client: makeClient(p) }));
+    const client = others.length ? createUnionClient(mainClient, others) : mainClient;
+    // `sources`: who the titles of the catalog come from (slot 0: the main provider).
+    cache = { provider, db, client, auth: null, active, sources: [{ slot: 0, provider }].concat(others.map((o) => ({ slot: o.slot, provider: o.provider }))) };
     // A playlist client gives stream addresses once it has read the playlist (the player asks for them without waiting).
     if (cache.client.prepare) await cache.client.prepare().catch(() => undefined);
     return cache;

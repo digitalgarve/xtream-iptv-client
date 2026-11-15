@@ -12,7 +12,7 @@ import { youtubeStreamUrl } from '../../services/trailer.js';
 import { formatClockTime } from '../../core/clock.js';
 import { watchKey, shouldResume } from '../../services/watchStore.js';
 import { pageEntries, getEntry, liveSequence, neighborKey } from '../../services/catalogQuery.js';
-import { streamLabel } from '../streamLabel.js';
+import { streamLabel, sourceNames } from '../streamLabel.js';
 import { portableKeyFor } from '../../services/shareKeys.js';
 import { createPlayerSubtitles } from './player/subtitles.js';
 
@@ -768,7 +768,8 @@ export function createPlayerPage(ctx, params) {
   /** "Versions": the streams of the group playing; the chosen one plays. */
   async function openVersions() {
     if (!liveEntry || !liveEntry.isGroup) return;
-    const options = liveEntry.members.map((m) => ({ label: streamLabel(m), value: m.id }));
+    const names = sourceNames(await ctx.active.get().catch(() => null)); // the provider of each version, with several active
+    const options = liveEntry.members.map((m) => ({ label: streamLabel(m, names), value: m.id }));
     const value = await ctx.dialogs.choose({ title: t('player.versions'), options, selected: current().id });
     if (value === null || destroyed || value === current().id) return;
     switchTo(liveEntry, value);

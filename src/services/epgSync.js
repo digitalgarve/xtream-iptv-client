@@ -65,8 +65,12 @@ export async function readGuide(url, onText, { signal, fetchImpl = fetch } = {})
   }
 }
 
-/** Downloads the XMLTV guide and replaces the stored programmes. Old programmes are deleted afterwards. */
-export async function syncEpg({ db, url, now = Date.now(), signal, emit = () => {}, fetchImpl, channels }) {
+/**
+ * Downloads the XMLTV guide and replaces the stored programmes. Old programmes are deleted afterwards.
+ * Several guides into one (`summary` shared, `finish: false` but for the last): their programmes are stored together, one per channel and
+ * start (the store's key), so the same programme of two guides is kept once.
+ */
+export async function syncEpg({ db, url, now = Date.now(), signal, emit = () => {}, fetchImpl, channels, summary: shared = null, finish = true }) {
   const wanted = channels || (await liveChannelIds(db));
   if (wanted.size === 0) {
     emit({ event: 'progress', phase: 'skipped' });
@@ -83,7 +87,7 @@ export async function syncEpg({ db, url, now = Date.now(), signal, emit = () => 
     writes = writes.then(() => dbPutMany(db, 'epg', batch));
     writes.catch(() => undefined); // a failed write is thrown where `writes` is awaited, not as an unhandled rejection meanwhile
   };
-  const summary = createChannelSummary(); // span and genres of every channel, for the guide page and the Live TV sidebar
+  const summary = shared || createChannelSummary(); // span and genres of every channel, for the guide page and the Live TV sidebar
   const parser = createXmltvParser({
     now,
     channels: wanted,
@@ -101,6 +105,7 @@ export async function syncEpg({ db, url, now = Date.now(), signal, emit = () => 
   if (buffer.length) flush();
   await writes;
   const total = written;
+  if (!finish) return { programmes: total, totalInFile: parser.stats().total, durationMs: Date.now() - t0 };
   const stale = await dbGetAllKeys(db, 'epg', { index: 'byStop', range: IDBKeyRange.upperBound(now) });
   await dbDeleteMany(db, 'epg', stale);
   const perChannel = summary.result();
@@ -144,7 +149,24 @@ export async function probeGuide(url, { fetchImpl = fetch, signal } = {}) {
   }
 }
 
-export async function runEpgForProvider({ provider, customUrl = '', force = false, signal, emit = () => {}, openDb = openProviderDb, fetchImpl, now = Date.now() }) {
+/** After the guides were read: old programmes out, the channel summary and the record of the download written. */
+async function finishEpg({ db, now, summary, channels }) {
+  const stale = await dbGetAllKeys(db, 'epg', { index: 'byStop', range: IDBKeyRange.upperBound(now) });
+  await dbDeleteMany(db, 'epg', stale);
+  const perChannel = summary.result();
+  await dbPut(db, 'meta', perChannel);
+  const total = await new Promise((resolve) => {
+    const request = db.transaction('epg').objectStore('epg').count();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(0);
+  });
+  const meta = { key: META_KEY, lastSync: now, programmes: total, channels: channels.size, guided: Object.keys(perChannel.channels).length, genres: Object.keys(perChannel.genres).length, until: perChannel.until };
+  await dbPut(db, 'meta', meta);
+  return meta;
+}
+
+/** `others`: the other active providers (catalogUnion.js): their guides join the main one's. */
+export async function runEpgForProvider({ provider, others = [], customUrl = '', force = false, signal, emit = () => {}, openDb = openProviderDb, fetchImpl, now = Date.now() }) {
   let db = null;
   let failure = null;
   let meta = null;
@@ -153,16 +175,30 @@ export async function runEpgForProvider({ provider, customUrl = '', force = fals
     if (!force && !shouldSyncEpg(await getEpgMeta(db), now)) {
       emit({ event: 'progress', phase: 'skipped' });
     } else {
-      // The custom guide replaces the provider's; when it cannot be read, the provider's is used.
-      if (customUrl) {
+      // The guide is all of them together: the one of every active provider and the custom one of Settings; a programme found in two
+      // of them is kept once (same channel and start: the custom guide's, read last, wins). A guide that cannot be read is left out; when
+      // none can, the error of the last.
+      const urls = Array.from(new Set([provider].concat(others).map((p) => xmltvUrl(p)).concat([customUrl]).filter(Boolean)));
+      if (!urls.length) emit({ event: 'progress', phase: 'skipped' }); // a playlist without a guide
+      const summary = createChannelSummary();
+      const channels = await liveChannelIds(db);
+      let read = 0;
+      let lastError = null;
+      for (let i = 0; i < urls.length; i += 1) {
         try {
-          meta = await syncEpg({ db, url: wrapApiUrl(customUrl), now, signal, emit, fetchImpl });
+          const got = await syncEpg({ db, url: wrapApiUrl(urls[i]), now, signal, emit, fetchImpl, channels, summary, finish: false });
+          if (!got.skipped) read += 1;
+          else {
+            meta = got;
+            break; // no channel has a guide id: nothing to read anywhere
+          }
         } catch (err) {
           if (signal && signal.aborted) throw err;
+          lastError = err;
         }
       }
-      if (!meta && xmltvUrl(provider)) meta = await syncEpg({ db, url: wrapApiUrl(xmltvUrl(provider)), now, signal, emit, fetchImpl });
-      else if (!meta) emit({ event: 'progress', phase: 'skipped' }); // a playlist without a guide
+      if (read) meta = await finishEpg({ db, now, summary, channels });
+      else if (lastError) throw lastError;
     }
   } catch (err) {
     const error = toAppError(err);

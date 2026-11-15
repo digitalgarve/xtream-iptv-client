@@ -120,7 +120,10 @@ export function createProviderSetup(ctx, { editId = null, firstRun = false, zone
         ctx.notices.success(t('notice.saved'), { key: 'provider' });
       } else {
         const provider = await ctx.providers.add(data);
-        await ctx.providers.setActiveId(provider.id);
+        // The first one becomes the active one; another joins the active ones (one catalog of all of them, catalogUnion.js).
+        if (ctx.providers.setActive && (await ctx.providers.getActive())) await ctx.providers.setActive(provider.id, true);
+        else await ctx.providers.setActiveId(provider.id);
+        if (ctx.active && ctx.active.release) ctx.active.release();
         await ctx.refreshAdult();
         ctx.catalog.start({ force: true });
         ctx.notices.success(t('notice.added'), { key: 'provider' });

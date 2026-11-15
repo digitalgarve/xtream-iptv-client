@@ -13,6 +13,7 @@ self.onmessage = function (event) {
       controller = new AbortController();
       runGenreBackfillForProvider({
         provider: message.provider,
+        others: message.others || [],
         tmdbKey: message.tmdbKey,
         language: message.language,
         phase: message.phase,

@@ -2,7 +2,7 @@ import { createCodePrompt } from '../components/codePrompt.js';
 import { focusOnBar } from '../rowFocus.js';
 import { resetApp } from '../../services/resetApp.js';
 import { clearDerived } from '../../services/derivedStore.js';
-import { removeCatalogType } from '../../services/catalogSync.js';
+import { removeUnifiedCatalog } from '../../services/catalogSync.js';
 import { DERIVED_STORES } from '../../services/dbSize.js';
 import { Priority } from '../../services/backgroundQueue.js';
 import { transactionDone, dbDelete } from '../../core/idb.js';
@@ -29,7 +29,6 @@ import { DEFAULT_SIMILARITY, DEFAULT_MAX_DIFF } from '../../services/liveNetwork
 import { createField } from '../atoms/field.js';
 import { createSidebarItem } from '../atoms/sidebarItem.js';
 import { runningVersions, lastCheck } from '../../services/updates.js';
-import { providerMediaTypes } from '../../services/providerTypes.js';
 import { APP_VERSION } from '../../core/env.js';
 import { formatDateTime } from '../../core/format.js';
 import { TOPBAR_ZONE } from '../components/topbar.js';
@@ -213,19 +212,19 @@ export function createSettingsPage(ctx) {
   const devicePanel = createDevicePanel(ctx);
   const opsPanel = createOperationsPanel(ctx);
   let metaBusy = false;
-  const typeName = (type) => t({ movie: 'nav.movies', series: 'nav.series', live: 'nav.live' }[type]);
   const rowOf = (el, activate, secondary = null) => ({ el, ...(secondary ? { secondary } : {}), refresh: async () => undefined, activate });
   const confirmRemove = (title, message) => ctx.dialogs.confirm({ title, message, confirmLabel: t('settings.confirmRemove'), cancelLabel: t('setup.cancel') });
 
-  // Catalog table: one remove / update pair per media type.
-  async function removeType(type) {
-    const ok = await confirmRemove(t('settings.typeRemove', { type: typeName(type) }), t('settings.typeRemoveConfirm', { type: typeName(type) }));
+  // Catalog table: the unified catalog (catalogUnion.js) removed or worked out again from the downloaded lists (the lists of each provider
+  // are on the Provider page).
+  async function removeUnified() {
+    const ok = await confirmRemove(t('settings.unifiedRemove'), t('settings.unifiedRemoveConfirm'));
     if (!ok) return;
     const current = await ctx.active.get();
     if (!current) return;
     ctx.genres.stop();
     ctx.catalog.cancel();
-    await removeCatalogType(current.db, type);
+    await removeUnifiedCatalog(current.db);
     ctx.catalogChanged();
     ctx.notices.success(t('notice.removed'));
     panel.refreshStatus().catch(() => undefined);
@@ -235,10 +234,14 @@ export function createSettingsPage(ctx) {
   const queueJob = (key, label, run) => {
     if (!ctx.jobs.add(key, label, run)) ctx.notices.info(t('operations.alreadyQueued'), { key: 'queued' });
   };
-  const catalogRows = panel.rowButtons.flatMap((b) => [
-    rowOf(b.refresh, async () => queueJob(`catalog:${b.type}`, `${t('operations.catalog')} · ${typeName(b.type)}`, () => ctx.catalog.start({ force: true, types: [b.type], rewrite: true }))),
-    rowOf(b.remove, () => removeType(b.type), 'left'),
-  ]);
+  const catalogRows = [
+    rowOf(panel.unifiedButtons.refresh, async () =>
+      queueJob('catalog:unified', t('settings.unifiedRebuild'), async () => {
+        await ctx.rebuildCatalog(['movie', 'series', 'live']);
+        panel.refreshStatus().catch(() => undefined);
+      })),
+    rowOf(panel.unifiedButtons.remove, () => removeUnified(), 'left'),
+  ];
   // Guide row: download again now (it is otherwise downloaded once a day, after the other start-up work), or delete it.
   async function removeEpg() {
     if (!(await confirmRemove(t('settings.epgRemove'), t('settings.epgRemoveConfirm')))) return;
@@ -781,16 +784,8 @@ export function createSettingsPage(ctx) {
       panel.mount();
       ctx.providers.getActive().then((provider) => {
         const id = provider && provider.id;
-        panel.setProviderName(provider ? provider.name : '');
-        panel.setTypes(providerMediaTypes(provider));
         panel.el.style.display = id ? '' : 'none';
         catalogRows.forEach((row) => { row.el.style.display = id ? '' : 'none'; });
-        // The update / remove buttons of a type the provider does not have (a playlist's series) are hidden with its row.
-        panel.rowButtons.forEach((b) => {
-          if (!provider || providerMediaTypes(provider).indexOf(b.type) >= 0) return;
-          b.refresh.style.display = 'none';
-          b.remove.style.display = 'none';
-        });
         if (id) panel.setProvider(id);
       });
       promos.refresh().catch(() => undefined);

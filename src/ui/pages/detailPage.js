@@ -5,7 +5,8 @@ import { createHint } from '../atoms/hint.js';
 import { createHeading } from '../atoms/heading.js';
 import { createPlaceholder } from '../atoms/placeholder.js';
 import { createMetaSeparator, createMetaRating, createMetaText } from '../atoms/metaParts.js';
-import { streamLabel } from '../streamLabel.js';
+import { streamLabel, sourceNames } from '../streamLabel.js';
+import { decodeId, decodeCategory } from '../../services/catalogUnion.js';
 import { cssUrl } from '../cssUrl.js';
 import { isEmptySeries, markUnavailable } from '../../services/unavailable.js';
 import { scheduleId, LEAD_MS } from '../../services/scheduledViewing.js';
@@ -40,6 +41,8 @@ export function createDetailPage(ctx, params) {
   let categoryItems = []; // [{ id, name }]
   let collectionItems = []; // collections that hold this title: [{ id, name }]
   let categoryNames = new Map();
+  let names = new Map(); // slot → name of the active providers (catalogUnion.js)
+  const providersEl = h('div', { class: 'detail-categories' });
   let db = null;
   let mergeAvailable = false; // grouping is on: a single channel can be merged by hand
   let networkChoices = []; // Live TV networks a channel can be added to: [{ key, name, networkId }]
@@ -82,7 +85,7 @@ export function createDetailPage(ctx, params) {
     { class: 'page detail loading' },
     backdropEl,
     poster,
-    h('div', { class: 'detail-body' }, titleEl, metaEl, versionEl, actionsEl, plotEl, collectionsEl, categoriesEl, tagsEl, ratingEl, directorEl, companiesEl, epgEl, episodesEl, castEl, relatedEl),
+    h('div', { class: 'detail-body' }, titleEl, metaEl, versionEl, actionsEl, plotEl, collectionsEl, providersEl, categoriesEl, tagsEl, ratingEl, directorEl, companiesEl, epgEl, episodesEl, castEl, relatedEl),
   );
 
   const data = () => ({
@@ -125,7 +128,7 @@ export function createDetailPage(ctx, params) {
   async function chooseStream() {
     const value = await ctx.dialogs.choose({
       title: t('detail.version'),
-      options: entry.members.map((m) => ({ label: streamLabel(m), value: m.id })),
+      options: entry.members.map((m) => ({ label: streamLabel(m, names), value: m.id })),
       selected: selectedMember.id,
     });
     if (value === null || destroyed) return;
@@ -337,11 +340,37 @@ export function createDetailPage(ctx, params) {
 
   function renderCategories(next) {
     renderChips(collectionsEl, 'detailCollections', collectionItems, 'collection', next, t('nav.collections'), (item) => ctx.router.push('collection', { id: item.id, section: params.section || 'collections' }));
-    renderChips(categoriesEl, 'detailCategories', categoryItems, 'category', next, t('detail.categories'));
+    renderProviders();
+    // The categories of each provider that has the title: "Categories <provider>" with several active, one line each.
+    clear(categoriesEl);
+    const bySlot = new Map();
+    categoryItems.forEach((item) => {
+      const { slot } = decodeCategory(item.id);
+      if (!bySlot.has(slot)) bySlot.set(slot, []);
+      bySlot.get(slot).push(item);
+    });
+    Array.from(bySlot.keys()).sort((a, b) => a - b).forEach((slot) => {
+      const line = h('div', { class: 'detail-categories' });
+      categoriesEl.appendChild(line);
+      const label = names.size > 1 ? `${t('detail.categories')} ${names.get(slot) || ''}`.trim() : t('detail.categories');
+      renderChips(line, slot ? `detailCategories${slot}` : 'detailCategories', bySlot.get(slot), 'category', next, label);
+    });
     renderChips(tagsEl, 'detailGenres', entry.type === 'live' ? [] : genreItems(), 'genre', next, t('detail.genres'));
     renderRating();
     renderDirectors();
     renderCompanies();
+  }
+
+  /** "Provider": the providers that have this title (its versions), above the categories. */
+  function renderProviders() {
+    clear(providersEl);
+    if (!entry) return;
+    const ids = entry.members && entry.members.length ? entry.members.map((m) => m.id) : [entry.defaultId];
+    const slots = Array.from(new Set(ids.map((id) => decodeId(id).slot)));
+    const list = slots.map((slot) => names.get(slot)).filter(Boolean);
+    if (!list.length) return;
+    providersEl.appendChild(createChipLabel(t('detail.providers')));
+    list.forEach((name) => providersEl.appendChild(createChip({ text: name })));
   }
 
   /** The age rating (TMDB, the country of the language of the app), before the director. */
@@ -530,7 +559,7 @@ export function createDetailPage(ctx, params) {
     // Version dropdown, right under the subtitle and before the plot.
     clear(versionEl);
     if ((entry.type === 'movie' || entry.isGroup) && entry.members.length > 1) {
-      const select = createSelectField({ id: 'detailVersion', label: '', text: `${streamLabel(selectedMember)} (${entry.members.length})`, onOpen: chooseStream });
+      const select = createSelectField({ id: 'detailVersion', label: '', text: `${streamLabel(selectedMember, names)} (${entry.members.length})`, onOpen: chooseStream });
       versionEl.appendChild(select.el);
       next.push({ id: 'detailVersion', zone: select.zone });
     }
@@ -654,6 +683,7 @@ export function createDetailPage(ctx, params) {
     const current = await ctx.active.get();
     if (!current || destroyed) return;
     providerId = current.provider.id;
+    names = sourceNames(current);
     db = current.db;
     entry = await getEntry(current.db, params.entryKey);
     if (!entry || destroyed) return;

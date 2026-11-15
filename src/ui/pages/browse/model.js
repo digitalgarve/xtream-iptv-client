@@ -3,6 +3,7 @@
  * goes down, the entries of the sidebar and the constants they share.
  */
 import { GridModel } from '../../focus/models.js';
+import { decodeCategory } from '../../../services/catalogUnion.js';
 
 /** Icon before the label of the fixed sidebar entries (genres and categories get an empty slot to stay aligned). */
 export const SIDEBAR_ICON = { guide: 'clock', scheduled: 'scheduled', all: 'all', continue: 'continue', favorites: 'heart', suggestions: 'suggestions', genresToggle: 'genres', epgGenresToggle: 'genres', toggle: 'categories', networksToggle: 'network' };
@@ -64,7 +65,7 @@ export function createGrowingGridModel({ columns, getCount, hasMore, more }) {
  * the "Genres" entry of the guide's categories (open, only when the guide has them), the "Networks" entry (open, closed when the guide genres
  * are there) and the categories (closed).
  */
-export function sidebarItems({ type, hidden = null, genres = [], epgGenres = [], epgGenresExpanded = true, categories = [], pinned = [], networks = [], networksExpanded = true, expanded = false, genresExpanded = true, genresLoading = false, scheduled = false, labels }) {
+export function sidebarItems({ type, hidden = null, genres = [], epgGenres = [], epgGenresExpanded = true, categories = [], pinned = [], networks = [], networksExpanded = true, expanded = false, expandedOthers = new Set(), genresExpanded = true, genresLoading = false, scheduled = false, labels }) {
   // Live TV opens on the programme guide; "show all" follows it.
   // "Scheduled" (programmes whose viewing is scheduled) follows the guide when there are any.
   // The programme guide (Live TV) is listed only when it has rows (a channel with programmes in the hours shown).
@@ -81,10 +82,7 @@ export function sidebarItems({ type, hidden = null, genres = [], epgGenres = [],
       items.push({ kind: 'networksToggle', name: labels.networks, expanded: networksExpanded });
       if (networksExpanded) networks.forEach((n) => items.push({ kind: 'network', id: n.key, name: n.name, depth: 1 }));
     }
-    if (categories.length) {
-      items.push({ kind: 'toggle', name: labels.categories, expanded });
-      if (expanded) categories.forEach((c) => items.push({ kind: 'category', id: c.id, name: c.name, depth: 1 }));
-    }
+    pushCategories(items, categories, expanded, expandedOthers, labels);
     return items;
   }
   // Continue watching, favourites and suggestions are listed only when they have something to show (`hidden`).
@@ -97,11 +95,30 @@ export function sidebarItems({ type, hidden = null, genres = [], epgGenres = [],
     items.push({ kind: 'genresToggle', name: labels.genres, expanded: genresExpanded });
     if (genresExpanded) genres.forEach((g) => items.push({ kind: 'genre', id: String(g.key), name: g.name, depth: 1 }));
   }
-  if (categories.length) {
-    items.push({ kind: 'toggle', name: labels.categories, expanded });
-    if (expanded) categories.forEach((c) => items.push({ kind: 'category', id: c.id, name: c.name, depth: 1 }));
-  }
+  pushCategories(items, categories, expanded, expandedOthers, labels);
   return items;
+}
+
+/**
+ * The categories: one "Categories" entry; with several providers active (catalogUnion.js) one per provider, "Categories <provider>"
+ * (`slot` on the entry; `expanded` opens the main provider's, `expandedOthers` the others by slot).
+ */
+function pushCategories(items, categories, expanded, expandedOthers, labels) {
+  if (!categories.length) return;
+  const bySlot = new Map();
+  categories.forEach((c) => {
+    const { slot } = decodeCategory(c.id);
+    if (!bySlot.has(slot)) bySlot.set(slot, []);
+    bySlot.get(slot).push(c);
+  });
+  const slots = Array.from(bySlot.keys()).sort((a, b) => a - b);
+  const several = slots.length > 1 || (slots[0] || 0) !== 0;
+  slots.forEach((slot) => {
+    const open = slot === 0 ? expanded : expandedOthers.has(slot);
+    const name = several && labels.providerName ? `${labels.categories} ${labels.providerName(slot)}`.trim() : labels.categories;
+    items.push({ kind: 'toggle', slot, name, expanded: open, count: bySlot.get(slot).length });
+    if (open) bySlot.get(slot).forEach((c) => items.push({ kind: 'category', id: c.id, name: c.name, depth: 1 }));
+  });
 }
 
 /** Index of the entry matching a filter ({ kind, id }); 0 ("show all") when it is not there. */

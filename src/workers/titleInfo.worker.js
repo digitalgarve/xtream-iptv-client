@@ -13,6 +13,7 @@ self.onmessage = function (event) {
       controller = new AbortController();
       runTitleInfoForProvider({
         provider: message.provider,
+        members: message.members || [],
         search: message.search || null,
         excluded: message.excluded || {},
         cleanTitles: message.cleanTitles !== false,

@@ -127,7 +127,7 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
   }
 
   /** Runs the sync in a worker, or on the main thread when no worker can be created. */
-  function runJob(provider, force, custom) {
+  function runJob(provider, force, custom, others = []) {
     return new Promise((resolve) => {
       let settled = false;
       const finish = (outcome) => {
@@ -136,7 +136,7 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
           resolve(outcome);
         }
       };
-      const local = () => runLocal({ provider, customUrl: custom, force, emit: (m) => m.event === 'done' && finish(m) }).then(finish);
+      const local = () => runLocal({ provider, others, customUrl: custom, force, emit: (m) => m.event === 'done' && finish(m) }).then(finish);
       let worker = null;
       cancelJob = () => {
         if (worker) worker.terminate();
@@ -156,7 +156,7 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
         const m = event.data || {};
         if (m.event === 'ready') {
           clearTimeout(timer);
-          worker.postMessage({ op: 'start', provider, customUrl: custom, force });
+          worker.postMessage({ op: 'start', provider, others, customUrl: custom, force });
         } else if (m.event === 'done') {
           worker.terminate();
           finish(m);
@@ -278,7 +278,8 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
       const startedAt = now();
       const end = operations ? operations.start('epg', { cancel: () => cancelJob && cancelJob() }) : () => undefined;
       try {
-        const outcome = await runJob(provider, force, await customUrl().catch(() => ''));
+        const others = providers.listActive ? (await providers.listActive()).slice(1) : [];
+        const outcome = await runJob(provider, force, await customUrl().catch(() => ''), others);
         if (outcome.error) log.warn('EPG sync failed', outcome.error.code);
         else {
           log.info(`EPG sync done in ${now() - startedAt} ms`);

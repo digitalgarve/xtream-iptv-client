@@ -21,6 +21,7 @@ import { LIVE_LAYOUT, DEFAULT_GROUPING, groupLiveItems, annotateGroupKeys, build
 import { buildNetworks, annotateNetworkKeys, networkCounts } from './liveNetworks.js';
 import { applyEnrichment } from './catalogEnrich.js';
 import { SYNC_ORDER, syncMetaKey as metaKey, getSyncMeta, getSyncStatus } from './syncMeta.js';
+import { readUnion, isMember, sourceLists, ownCategories } from './catalogUnion.js';
 
 export const LIST_TTL_MS = 12 * 60 * 60 * 1000;
 export const BATCH_SIZE = 2000;
@@ -77,6 +78,20 @@ export const NETWORK_REPORT_KEY = 'networkReport';
 
 export function shouldSync(meta, now = Date.now(), ttlMs = LIST_TTL_MS) {
   return !meta || !meta.lastSync || !meta.genres || now - meta.lastSync > ttlMs; // `genres`: lists synced before genres existed are refreshed once
+}
+
+/** Movies / series shown as one card for several versions: { versionGroups, versionedCount } (cards with more than one, their versions). */
+function entryGroupCounts(entries) {
+  let versionGroups = 0;
+  let versionedCount = 0;
+  entries.forEach((entry) => {
+    const n = entry.members ? entry.members.length : 0;
+    if (n > 1) {
+      versionGroups += 1;
+      versionedCount += n;
+    }
+  });
+  return { versionGroups, versionedCount };
 }
 
 /** How many channels are in groups, how many groups there are and how many channels stand alone. */
@@ -216,6 +231,22 @@ export async function removeCatalogType(db, type) {
   await bumpCatalogRev(db);
 }
 
+/**
+ * Removes the unified catalog (what the app shows, catalogUnion.js): entries, their categories and genres, channel groups and networks,
+ * the guide rows, the categories of the other providers. The downloaded lists stay: "work it out again" makes it from them, no download.
+ */
+export async function removeUnifiedCatalog(db) {
+  for (const type of SYNC_ORDER) {
+    for (const store of ['entries', 'entry_cat', 'entry_genre', 'entry_genre_tmdb', 'groups']) await dbDeleteMany(db, store, await dbGetAllKeys(db, store, ranges[store](type)));
+    const categories = await dbGetAllRange(db, 'categories', ranges.categories(type).range);
+    await dbDeleteMany(db, 'categories', categories.filter((row) => !ownCategories([row]).length).map((row) => row.key));
+    const meta = await getSyncMeta(db, type);
+    if (meta) await dbPut(db, 'meta', { ...meta, entryCount: 0, versionGroups: 0, versionedCount: 0, groupCount: 0, groupedCount: 0, networkCount: 0, networkedCount: 0 });
+  }
+  await dbDelete(db, 'meta', GUIDE_INDEX_KEY);
+  await bumpCatalogRev(db);
+}
+
 /** Rebuilds the grid entries from the stored items (used when the excluded categories change). */
 export async function rebuildEntries({ db, type, excludedCategories = new Set(), cleanTitles = true, grouping = DEFAULT_GROUPING, emit = () => {} }) {
   let items = await dbGetAllRange(db, 'items', IDBKeyRange.bound(`${type}:`, `${type}:\uffff`));
@@ -224,12 +255,19 @@ export async function rebuildEntries({ db, type, excludedCategories = new Set(),
     await dbDeleteMany(db, 'items', items.filter((item) => excludedCategories.has(item.categoryId)).map((item) => item.key));
     items = items.filter((item) => !excludedCategories.has(item.categoryId));
   }
-  const entries = buildEntries(type, items, { excludedCategories, cleanTitles });
-  const { groups, networks, report } = type === MediaType.LIVE ? buildLiveComposites(entries, items, excludedCategories, grouping) : { groups: [], networks: [], report: null };
+  const union = await readUnion(db);
+  if (isMember(union)) return 0; // a provider whose lists go into another one's catalog: no entries of its own
+  // With other providers active, their lists join this one's (see catalogUnion.js); their categories are written with it.
+  const others = await sourceLists(db, type);
+  const all = others.items.length ? items.concat(others.items) : items;
+  const entries = buildEntries(type, all, { excludedCategories, cleanTitles });
+  const { groups, networks, report } = type === MediaType.LIVE ? buildLiveComposites(entries, all, excludedCategories, grouping) : { groups: [], networks: [], report: null };
   await writeEntries(db, type, entries, { groups, networks });
   if (report) await dbPut(db, 'meta', { key: NETWORK_REPORT_KEY, type, report });
+  const own = ownCategories(await dbGetAllRange(db, 'categories', IDBKeyRange.bound(`${type}:`, `${type}:\uffff`)));
+  await replaceRows(db, 'categories', type, own.concat(others.categories));
   const previous = (await getSyncMeta(db, type)) || { key: metaKey(type), type };
-  await dbPut(db, 'meta', { ...previous, itemCount: items.length, entryCount: entries.length, ...(type === MediaType.LIVE ? { layout: LIVE_LAYOUT, ...groupCounts(entries, groups, networks) } : {}) });
+  await dbPut(db, 'meta', { ...previous, itemCount: items.length, unionItemCount: all.length, entryCount: entries.length, ...entryGroupCounts(entries), ...(type === MediaType.LIVE ? { layout: LIVE_LAYOUT, ...groupCounts(entries, groups, networks) } : {}) });
   await bumpCatalogRev(db);
   emit({ event: 'progress', mediaType: type, phase: 'rebuilt', done: entries.length, total: entries.length });
   return entries.length;
@@ -311,21 +349,28 @@ export async function syncType({
   throwIfAborted(signal);
   progress('entries');
   const entriesStart = now();
-  const entries = buildEntries(type, items, { excludedCategories, cleanTitles });
-  const { groups, networks, report } = type === MediaType.LIVE ? buildLiveComposites(entries, items, excludedCategories, grouping) : { groups: [], networks: [], report: null };
+  // A provider whose lists go into another one's catalog (catalogUnion.js) keeps only its lists: no entries, groups or genres here.
+  const union = await readUnion(db);
+  const member = isMember(union);
+  const others = member ? { items: [], categories: [] } : await sourceLists(db, type);
+  const all = others.items.length ? items.concat(others.items) : items;
+  const entries = member ? [] : buildEntries(type, all, { excludedCategories, cleanTitles });
+  const { groups, networks, report } = type === MediaType.LIVE && !member ? buildLiveComposites(entries, all, excludedCategories, grouping) : { groups: [], networks: [], report: null };
   const buildMs = now() - entriesStart;
   const itemCount = items.length;
+  const unionItemCount = all.length;
   items.length = 0; // the entries hold what the grids need: the items are not kept in memory while the rows are written
+  all.length = 0;
   projected.length = 0;
   // New or changed titles have only the provider's genres until TMDB has been through them; an unchanged list keeps TMDB's.
   if (itemChanges) await dbDelete(db, 'meta', 'genres:source');
-  const entryChanges = await writeEntries(db, type, entries, { groups, networks, full });
+  const entryChanges = member ? 0 : await writeEntries(db, type, entries, { groups, networks, full });
   if (report) await dbPut(db, 'meta', { key: NETWORK_REPORT_KEY, type, report });
   const entriesMs = now() - entriesStart;
   // A category list that came back empty while the titles did not (a glitch of the panel) keeps the categories we have: the titles still
   // point at them, and the sidebar would lose every category until the next sync.
   const keepCategories = categories.length === 0 && itemCount > 0 && previous && previous.categoryCount > 0;
-  const categoryChanges = keepCategories ? 0 : await replaceRows(db, 'categories', type, categories, { full });
+  const categoryChanges = keepCategories ? 0 : await replaceRows(db, 'categories', type, categories.concat(others.categories), { full });
   const writeMs = now() - writeStart;
 
   const meta = {
@@ -334,7 +379,9 @@ export async function syncType({
     lastSync: now(),
     genres: true,
     itemCount,
+    unionItemCount,
     entryCount: entries.length,
+    ...entryGroupCounts(entries),
     ...(type === MediaType.LIVE ? { layout: LIVE_LAYOUT, ...groupCounts(entries, groups, networks) } : {}),
     categoryCount: keepCategories ? previous.categoryCount : categories.length,
     excludedCount: excludedCategories.size,
@@ -353,7 +400,7 @@ export async function syncType({
 }
 
 /** Syncs several media types in order. A failing type does not stop the others, except auth/abort errors. */
-export async function runSync({ db, client, types = SYNC_ORDER, excluded = {}, cleanTitles = true, grouping = DEFAULT_GROUPING, force = false, rewrite = false, signal, emit = () => {}, gate, now = Date.now, retryDelays, search = null }) {
+export async function runSync({ db, client, types = SYNC_ORDER, excluded = {}, cleanTitles = true, grouping = DEFAULT_GROUPING, force = false, rewrite = false, rebuildTypes = [], signal, emit = () => {}, gate, now = Date.now, retryDelays, search = null }) {
   const results = [];
   for (const type of types) {
     try {
@@ -361,6 +408,12 @@ export async function runSync({ db, client, types = SYNC_ORDER, excluded = {}, c
       const stored = await getSyncMeta(db, type);
       const oldLayout = type === MediaType.LIVE && stored && stored.layout !== LIVE_LAYOUT; // lists of an older layout are downloaded again once
       if (!force && !oldLayout && !shouldSync(stored, now())) {
+        // The lists are fresh, but the catalog must be worked out again (another active provider's list changed, or the active ones).
+        if (stored && rebuildTypes.includes(type)) {
+          await rebuildEntries({ db, type, excludedCategories: excluded[type] || new Set(), cleanTitles, grouping: type === MediaType.LIVE ? grouping : undefined, emit });
+          results.push({ type, rebuilt: true });
+          continue;
+        }
         emit({ event: 'progress', mediaType: type, phase: 'skipped' });
         results.push({ type, skipped: true });
         continue;
@@ -381,7 +434,7 @@ export async function runSync({ db, client, types = SYNC_ORDER, excluded = {}, c
  * Entry point shared by the Web Worker and the main-thread fallback:
  * opens the provider database, checks the account, syncs, and always ends with a `done` event.
  */
-export async function runSyncForProvider({ provider, types, excluded, cleanTitles = true, grouping = DEFAULT_GROUPING, force, rewrite = false, signal, emit = () => {}, gate, openDb = openProviderDb, makeClient, search = null }) {
+export async function runSyncForProvider({ provider, types, excluded, cleanTitles = true, grouping = DEFAULT_GROUPING, force, rewrite = false, rebuildTypes = [], signal, emit = () => {}, gate, openDb = openProviderDb, makeClient, search = null }) {
   let db = null;
   let results = [];
   let failure = null;
@@ -391,7 +444,7 @@ export async function runSyncForProvider({ provider, types, excluded, cleanTitle
     const auth = await client.authenticate();
     emit({ event: 'account', expiresAt: (auth && auth.user && auth.user.expiresAt) || null });
     db = await openDb(provider.id);
-    results = await runSync({ db, client, types, excluded, cleanTitles, grouping, force, rewrite, signal, emit, gate, search });
+    results = await runSync({ db, client, types, excluded, cleanTitles, grouping, force, rewrite, rebuildTypes, signal, emit, gate, search });
   } catch (err) {
     const error = toAppError(err);
     failure = { code: error.code, message: error.message };

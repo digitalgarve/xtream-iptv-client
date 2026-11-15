@@ -12,7 +12,7 @@ import { TITLE_INFO_KEY } from './titleInfo.js';
  * after the catalog scan. `mode` "forget": what was learned is deleted and the ids it gave are taken back (nothing is asked).
  * Emits { event: 'progress', mediaType, done, total }, { event: 'info', message } and ends with { event: 'done', count, byType }.
  */
-export async function runTitleInfoForProvider({ provider, search = null, excluded = {}, cleanTitles = true, grouping, mode = 'run', signal, gate, emit = () => {}, openDb = openProviderDb, makeClient = createProviderClient, now = Date.now, paces = null }) {
+export async function runTitleInfoForProvider({ provider, members = [], search = null, excluded = {}, cleanTitles = true, grouping, mode = 'run', signal, gate, emit = () => {}, openDb = openProviderDb, makeClient = createProviderClient, now = Date.now, paces = null }) {
   let db = null;
   const byType = {};
   let count = 0;
@@ -21,6 +21,21 @@ export async function runTitleInfoForProvider({ provider, search = null, exclude
     const client = makeClient(provider);
     for (const type of ENRICHABLE) {
       if (signal && signal.aborted) break;
+      // The other active providers first: their own lists get what was learned; the unified catalog is worked out after them.
+      let membersChanged = false;
+      for (const member of members) {
+        if (signal && signal.aborted) break;
+        let mdb = null;
+        try {
+          mdb = await openDb(member.id);
+          if (mode === 'forget') await dbDeleteMany(mdb, 'enrich', await dbGetAllKeys(mdb, 'enrich', { range: IDBKeyRange.bound(`${type}:`, `${type}:￿`) }));
+          const got = await enrichType({ db: mdb, client: makeClient(member), type, search, signal, gate, now, ask: mode !== 'forget', ...(paces || {}), rebuild: async () => undefined, log: (message) => emit({ event: 'info', level: 'warn', message }) });
+          if (got.changed) membersChanged = true;
+          count += got.asked + got.searched;
+        } finally {
+          if (mdb) mdb.close();
+        }
+      }
       if (mode === 'forget') await dbDeleteMany(db, 'enrich', await dbGetAllKeys(db, 'enrich', { range: IDBKeyRange.bound(`${type}:`, `${type}:￿`) }));
       const counts = await enrichType({
         db,
@@ -36,7 +51,8 @@ export async function runTitleInfoForProvider({ provider, search = null, exclude
         log: (message) => emit({ event: 'info', level: 'warn', message }),
         rebuild: () => rebuildEntries({ db, type, excludedCategories: new Set(excluded[type] || []), cleanTitles, grouping }),
       });
-      byType[type] = { ...counts, at: now() };
+      if (membersChanged && !counts.changed) await rebuildEntries({ db, type, excludedCategories: new Set(excluded[type] || []), cleanTitles, grouping });
+      byType[type] = { ...counts, changed: counts.changed + (membersChanged ? 1 : 0), at: now() };
       count += counts.asked + counts.searched;
       if (counts.asked || counts.searched || counts.changed) {
         emit({ event: 'info', message: `Title details ${type}: ${counts.asked} asked (${counts.found} TMDB ids), ${counts.searched} searched on TMDB (${counts.matched} found), ${counts.changed} titles updated` });

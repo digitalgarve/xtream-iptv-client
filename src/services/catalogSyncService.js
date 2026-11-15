@@ -4,6 +4,7 @@ import { log } from '../core/logger.js';
 import { openProviderDb } from '../db/providerDb.js';
 import { MediaType } from './mediaType.js';
 import { SYNC_ORDER, getSyncStatus } from './syncMeta.js';
+import { readUnion, writeUnion, unionSources } from './catalogUnion.js';
 
 /** The sync on the main thread (when no worker can be made): its code is loaded only then, not with the start-up bundle. */
 const runSyncForProvider = (args) => import(/* webpackChunkName: "catalog-local" */ './catalogSync.js').then((m) => m.runSyncForProvider(args));
@@ -61,26 +62,43 @@ export class CatalogSyncService {
     }
   }
 
-  /** Starts (or restarts) a sync for the active provider. Resolves with the final `done` event, or null. */
-  /** `rewrite`: every row written again, not only what changed (the forced update of one type from Settings). */
-  async start({ force = false, types = SYNC_ORDER, rewrite = false } = {}) {
-    const provider = await this.providers.getActive();
-    if (!provider) return null;
-    this.cancel();
+  /**
+   * Says to every active provider's database what it is in the unified catalog (catalogUnion.js): the main one gets the list of the other
+   * active providers, they are members. Resolves true when the main one's list changed (its catalog must be worked out again).
+   */
+  async writeUnionRoles(active) {
+    const [main, ...others] = active;
+    const sources = others.map((p) => ({ id: p.id, slot: p.slot, name: p.name }));
+    const db = await openProviderDb(main.id);
+    let changed = false;
+    try {
+      const before = await readUnion(db);
+      changed = JSON.stringify(unionSources(before).map((s) => [s.id, s.slot])) !== JSON.stringify(sources.map((s) => [s.id, s.slot])) || Boolean(before && before.role);
+      // `pending`: the catalog is still to be worked out with these sources (kept until a run of the main one ends well, even if this
+      // run is cancelled by a new one).
+      const pending = changed || Boolean(before && before.pending);
+      await writeUnion(db, sources.length || pending ? { sources, ...(pending ? { pending: true } : {}) } : null);
+      changed = pending;
+    } finally {
+      db.close();
+    }
+    for (const other of others) {
+      const odb = await openProviderDb(other.id);
+      try {
+        await writeUnion(odb, { role: 'member' });
+      } finally {
+        odb.close();
+      }
+    }
+    return changed;
+  }
 
+  async payloadFor(provider, { types, force, rewrite, rebuildTypes = [] }) {
     const excluded = {};
     for (const type of Object.values(MediaType)) {
       excluded[type] = Array.from(await this.settings.getExcluded(provider.id, type));
     }
-    const job = {};
-    this.job = job;
-    this.state = { ...emptyState(), running: true, startedAt: Date.now(), paused: this.gate.isPaused(), providerId: provider.id };
-    types.forEach((type) => {
-      this.state.types[type] = { phase: 'queued' };
-    });
-    this.notify();
-
-    const payload = {
+    return {
       provider: { id: provider.id, type: provider.type || 'xtream', baseUrl: provider.baseUrl, username: provider.username, password: provider.password, playlistUrl: provider.playlistUrl || '', epgUrl: provider.epgUrl || '' },
       types,
       excluded,
@@ -88,9 +106,69 @@ export class CatalogSyncService {
       grouping: await this.getGrouping(provider.id),
       force,
       rewrite,
+      rebuildTypes,
       search: (await this.getTitleSearch().catch(() => null)) || null,
     };
+  }
 
+  /**
+   * Starts (or restarts) a sync of the active providers. Resolves with the final `done` event of the main one, or null.
+   * With several active, the others are synced first (their lists only), then the main one, whose catalog is worked out from all of them;
+   * when only another provider's list changed (or the active ones changed) the main one's catalog is worked out again without a download.
+   * `rewrite`: every row written again, not only what changed (the forced update of one type from Settings). `only`: one provider.
+   */
+  async start({ force = false, types = SYNC_ORDER, rewrite = false, only = null } = {}) {
+    const active = this.providers.listActive ? await this.providers.listActive() : [await this.providers.getActive()].filter(Boolean);
+    if (!active.length) return null;
+    this.cancel();
+    const job = {};
+    this.job = job;
+    this.state = { ...emptyState(), running: true, startedAt: Date.now(), paused: this.gate.isPaused(), providerId: active[0].id };
+    types.forEach((type) => {
+      this.state.types[type] = { phase: 'queued' };
+    });
+    this.notify();
+
+    // (A provider store without several active ones, as in tests, has no unified catalog to describe.)
+    let unionDirty = !this.providers.listActive ? false : await this.writeUnionRoles(active).catch((err) => {
+      log.warn('Unified catalog roles failed', err && err.message);
+      return false;
+    });
+    job.final = false; // the runs of the other providers do not end the job
+    for (const member of active.slice(1)) {
+      if (only && only !== member.id) continue;
+      if (this.job !== job) return null;
+      this.state.providerId = member.id;
+      const outcome = await this.runOne(job, await this.payloadFor(member, { types, force, rewrite }));
+      if (outcome && (outcome.results || []).some((r) => r.meta && r.meta.changes)) unionDirty = true;
+    }
+    if (this.job !== job) return null;
+    job.final = true;
+    if (only && only !== active[0].id && !unionDirty) {
+      this.state.running = false;
+      this.job = null;
+      this.notify();
+      return { event: 'done', results: [], error: null };
+    }
+    this.state.providerId = active[0].id;
+    const mainForce = only && only !== active[0].id ? false : force;
+    const outcome = await this.runOne(job, await this.payloadFor(active[0], { types, force: mainForce, rewrite, rebuildTypes: unionDirty ? types : [] }));
+    // Done with the main one: the unified catalog is up to date with its sources.
+    if (outcome && !outcome.cancelled && !outcome.error && this.providers.listActive) {
+      const db = await openProviderDb(active[0].id).catch(() => null);
+      if (db) {
+        try {
+          const record = await readUnion(db);
+          if (record && record.pending) await writeUnion(db, { sources: unionSources(record) });
+        } finally {
+          db.close();
+        }
+      }
+    }
+    return outcome;
+  }
+
+  async runOne(job, payload) {
     let outcome = null;
     try {
       outcome = await this.runInWorker(job, payload);
@@ -167,6 +245,7 @@ export class CatalogSyncService {
       grouping: payload.grouping || undefined,
       force: payload.force,
       rewrite: payload.rewrite,
+      rebuildTypes: payload.rebuildTypes || [],
       search: payload.search,
       signal: this.controller.signal,
       emit: (message) => this.handle(job, message),
@@ -185,9 +264,12 @@ export class CatalogSyncService {
       return;
     }
     if (message.event === 'done') {
-      this.state.running = false;
       this.state.error = message.error || null;
-      this.job = null;
+      // The run of another active provider ends: the job goes on with the next one (the main one ends it).
+      if (job.final !== false) {
+        this.state.running = false;
+        this.job = null;
+      }
     } else if (message.event === 'progress') {
       if (message.mediaType) {
         this.state.types[message.mediaType] = { ...message };

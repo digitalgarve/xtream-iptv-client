@@ -54,3 +54,28 @@ describe('SettingsService', () => {
     db.close();
   });
 });
+
+describe('several active providers', () => {
+  test('every provider has a fixed slot; the main one and the others; at least one stays on; the main one switched off hands over', async () => {
+    const { openAppDb } = await import('../../src/db/appDb.js');
+    const { ProviderStore } = await import('../../src/services/providerStore.js');
+    const db = await openAppDb(`providers-active-${Math.random()}`);
+    const store = new ProviderStore(db, { removeProviderDb: async () => undefined });
+    const a = await store.add({ name: 'A', baseUrl: 'http://a', username: 'u', password: 'p' });
+    const b = await store.add({ name: 'B', baseUrl: 'http://b', username: 'u', password: 'p' });
+    const c = await store.add({ name: 'C', baseUrl: 'http://c', username: 'u', password: 'p' });
+    expect([a.slot, b.slot, c.slot]).toEqual([1, 2, 3]);
+    await store.setActiveId(a.id);
+    expect((await store.listActive()).map((p) => p.name)).toEqual(['A']);
+    expect(await store.setActive(c.id, true)).toEqual([a.id, c.id]);
+    expect(await store.setActive(b.id, true)).toEqual([a.id, b.id, c.id]); // the list order after the main one
+    expect((await store.getActive()).id).toBe(a.id);
+    expect(await store.setActive(a.id, false)).toEqual([b.id, c.id]); // the next one becomes the main one
+    expect((await store.getActive()).id).toBe(b.id);
+    await store.setActive(c.id, false);
+    expect(await store.setActive(b.id, false)).toEqual([b.id]); // the last one stays on
+    await store.setActive(c.id, true);
+    await store.remove(b.id); // the main one removed: the next active one takes over
+    expect((await store.listActive()).map((p) => p.name)).toEqual(['C']);
+  });
+});

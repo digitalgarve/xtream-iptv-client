@@ -157,7 +157,7 @@ describe('custom guide', () => {
     expect(await probeGuide('https://x/g', { fetchImpl: async () => ({ ok: false }) })).toBe(false);
     expect(await probeGuide('https://x/g', { fetchImpl: async () => { throw new Error('down'); } })).toBe(false);
   });
-  test('the custom guide replaces the provider one; when it fails the provider one is used', async () => {
+  test('the guide is the provider one and the custom one together, one entry per programme (the custom one wins); a failing one is left out', async () => {
     const provider = { id: 'p', baseUrl: 'http://prov', username: 'u', password: 'p' };
     const urls = [];
     const fetchImpl = async (url) => {
@@ -170,13 +170,21 @@ describe('custom guide', () => {
     db1.close = () => undefined;
     const ok = await runEpgForProvider({ provider, customUrl: 'http://custom-ok/g.xml', force: true, openDb: async () => db1, fetchImpl, now: Date.UTC(2026, 10, 2, 12) });
     expect(ok.error).toBeNull();
-    expect((await dbGetAll(db1, 'epg')).map((r) => r.title)).toEqual(['Custom']);
-    expect(urls.some((u) => u.includes('xmltv.php'))).toBe(false);
+    expect((await dbGetAll(db1, 'epg')).map((r) => r.title)).toEqual(['Custom']); // same channel and start: once
+    expect(urls.some((u) => u.includes('xmltv.php'))).toBe(true);
     const db2 = await makeDb();
     db2.close = () => undefined;
     const back = await runEpgForProvider({ provider, customUrl: 'http://custom-bad/g.xml', force: true, openDb: async () => db2, fetchImpl, now: Date.UTC(2026, 10, 2, 12) });
     expect(back.error).toBeNull();
     expect((await dbGetAll(db2, 'epg')).map((r) => r.title)).toEqual(['Provider']);
+    // Another active provider's guide joins: its other programmes are added.
+    const db3 = await makeDb();
+    db3.close = () => undefined;
+    const other = { id: 'q', baseUrl: 'http://other', username: 'u', password: 'p' };
+    const both = async (url) => (url.includes('other') ? { ok: true, text: async () => xml.replace('Custom', 'Other').replace(/start="(\d{8})(\d{2})/g, (m, d, h) => `start="${d}${String(Number(h) + 1).padStart(2, '0')}`).replace(/stop="(\d{8})(\d{2})/g, (m, d, h) => `stop="${d}${String(Number(h) + 1).padStart(2, '0')}`) } : fetchImpl(url));
+    const merged = await runEpgForProvider({ provider, others: [other], force: true, openDb: async () => db3, fetchImpl: both, now: Date.UTC(2026, 10, 2, 12) });
+    expect(merged.error).toBeNull();
+    expect((await dbGetAll(db3, 'epg')).map((r) => r.title).sort()).toEqual(['Other', 'Provider']);
   });
 });
 

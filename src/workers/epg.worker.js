@@ -7,7 +7,7 @@ self.onmessage = function (event) {
   const message = event.data || {};
   if (message.op === 'start') {
     controller = new AbortController();
-    runEpgForProvider({ provider: message.provider, customUrl: message.customUrl, force: message.force, signal: controller.signal, emit: (payload) => self.postMessage(payload) });
+    runEpgForProvider({ provider: message.provider, others: message.others || [], customUrl: message.customUrl, force: message.force, signal: controller.signal, emit: (payload) => self.postMessage(payload) });
   } else if (message.op === 'cancel' && controller) {
     controller.abort();
   }

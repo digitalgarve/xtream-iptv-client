@@ -1,7 +1,8 @@
 // On / off switch (src/ui/atoms/toggle.js) inside a list row.
 @use '../tokens' as *;
 
-.list .row .toggle {
+.list .row .toggle,
+.btn.provider-toggle .toggle {
   position: relative;
   flex: none;
   align-self: center;

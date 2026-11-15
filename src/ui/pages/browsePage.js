@@ -66,7 +66,9 @@ export function createBrowsePage(ctx, params = {}) {
     let genres = [];
   let pinned = []; // pinned categories / genres of this media type
   let categories = []; // visible provider categories [{ id, name }]
-  let expanded = false; // categories group
+  let expanded = false; // categories group (of the main provider)
+  const expandedOthers = new Set(); // the categories groups of the other active providers that are open (by slot, catalogUnion.js)
+  let providerNames = new Map(); // slot → name of the active providers
   let networks = []; // Live TV networks [{ key, name, memberKeys }]
   let networksExpanded = true; // networks group: open by default, closed when the guide genres are listed
   let epgGenres = []; // Live TV: genres of the guide [{ key, name }], with at least one channel
@@ -96,7 +98,7 @@ export function createBrowsePage(ctx, params = {}) {
   const USER_KINDS = ['continue', 'favorites', 'suggestions'];
   let userHidden = new Set(USER_KINDS); // set again in init(), keeping the entry the page opens on
 
-  const labels = () => ({ guide: t('epg.guide'), scheduled: t('epg.scheduled'), all: t('browse.all'), continue: t('home.continue'), favorites: t('nav.favorites'), suggestions: t('nav.suggestions'), genres: t('detail.genres'), categories: t('detail.categories'), networks: t('networks.title') });
+  const labels = () => ({ providerName: (slot) => providerNames.get(slot) || '', guide: t('epg.guide'), scheduled: t('epg.scheduled'), all: t('browse.all'), continue: t('home.continue'), favorites: t('nav.favorites'), suggestions: t('nav.suggestions'), genres: t('detail.genres'), categories: t('detail.categories'), networks: t('networks.title') });
 
   function renderCategories() {
     while (catList.firstChild) catList.removeChild(catList.firstChild);
@@ -152,7 +154,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   const countKey = (item) => `${item.kind}:${item.id === undefined ? '' : item.id}`;
   const countText = (item) => {
-    const n = item.kind === 'toggle' ? categories.length : item.kind === 'networksToggle' ? networks.length : item.kind === 'epgGenresToggle' ? epgGenres.length : item.kind === 'genresToggle' ? (genresLoading ? undefined : genres.length) : counts.get(countKey(item));
+    const n = item.kind === 'toggle' ? (item.count !== undefined ? item.count : categories.length) : item.kind === 'networksToggle' ? networks.length : item.kind === 'epgGenresToggle' ? epgGenres.length : item.kind === 'genresToggle' ? (genresLoading ? undefined : genres.length) : counts.get(countKey(item));
     return n === undefined ? '' : formatNumber(n, i18n.getLocale());
   };
   const countPending = (item, text) => text === '' && countsLoading && item.kind !== 'guide' && item.kind !== 'scheduled'; // counted apart
@@ -280,15 +282,15 @@ export function createBrowsePage(ctx, params = {}) {
   }
 
   /** Rebuilds the sidebar keeping the same entry selected (genres arrive late, categories expand). */
-  function rebuildSidebar(focusKey) {
+  function rebuildSidebar(focusKey, focusSlot = 0) {
     const keep = items[selected];
-    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
+    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, expandedOthers, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
     const same = keep ? items.findIndex((item) => item.kind === keep.kind && String(item.id) === String(keep.id)) : -1;
     selected = same >= 0 ? same : 0;
     renderCategories();
     syncFavorite();
     if (focusKey !== undefined && ctx.focus.activeId === CATS_ZONE) {
-      const at = items.findIndex((item) => item.kind === focusKey);
+      const at = items.findIndex((item) => item.kind === focusKey && (item.kind !== 'toggle' || (item.slot || 0) === focusSlot));
       if (at >= 0) ctx.focus.focus(CATS_ZONE, at);
     }
   }
@@ -774,12 +776,15 @@ export function createBrowsePage(ctx, params = {}) {
       autoSidebar = false;
       const item = items[i];
       if (item.kind === 'toggle' || item.kind === 'genresToggle' || item.kind === 'networksToggle' || item.kind === 'epgGenresToggle') {
-        if (item.kind === 'toggle') expanded = !expanded;
+        if (item.kind === 'toggle' && item.slot) {
+          if (expandedOthers.has(item.slot)) expandedOthers.delete(item.slot);
+          else expandedOthers.add(item.slot);
+        } else if (item.kind === 'toggle') expanded = !expanded;
         else if (item.kind === 'networksToggle') networksExpanded = !networksExpanded;
         else if (item.kind === 'epgGenresToggle') epgGenresExpanded = !epgGenresExpanded;
         else genresExpanded = !genresExpanded;
         selected = Math.min(selected, items.length - 1);
-        rebuildSidebar(item.kind);
+        rebuildSidebar(item.kind, item.slot || 0);
         return;
       }
       // OK on the entry already on screen: into its grid (or guide) as it is, without reading it again.
@@ -848,6 +853,7 @@ export function createBrowsePage(ctx, params = {}) {
     if (!current || destroyed) return;
     db = current.db; // shared handle: never closed here
     providerId = current.provider.id;
+    providerNames = new Map((current.sources || []).map((s) => [s.slot, s.provider.name]));
     const prefs = await ctx.settings.get();
     timeFormat = prefs.timeFormat || 'auto';
     const excluded = await ctx.settings.getExcluded(providerId, type);
@@ -913,7 +919,7 @@ export function createBrowsePage(ctx, params = {}) {
     if (!back) networksExpanded = !epgGenres.length || Boolean(filter && filter.kind === 'network');
     if (stale) listCategories(db, type).then((found) => { if (!destroyed) { categories = found.filter((c) => !excluded.has(String(c.id))).map((c) => ({ id: c.id, name: c.name })); rebuildSidebar(); } }).catch(() => undefined);
     if (stale && type === 'live') listNetworks(db).then((found) => { if (!destroyed) { networks = found; rebuildSidebar(); } }).catch(() => undefined);
-    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
+    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, expandedOthers, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
     selected = indexOfFilter(items, filter);
     renderCategories();
     syncFavorite();

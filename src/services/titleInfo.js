@@ -98,8 +98,11 @@ export function createTitleInfo({ active, settings, syncLog = null, createWorker
     if (p.type === 'm3u') return 0; // a playlist has no details
     const excluded = {};
     for (const type of ['movie', 'series']) excluded[type] = Array.from(await settings.getExcluded(p.id, type));
+    const describe = (x) => ({ id: x.id, type: x.type || 'xtream', baseUrl: x.baseUrl, username: x.username, password: x.password, playlistUrl: x.playlistUrl || '', epgUrl: x.epgUrl || '' });
     const payload = {
-      provider: { id: p.id, type: p.type || 'xtream', baseUrl: p.baseUrl, username: p.username, password: p.password, playlistUrl: p.playlistUrl || '', epgUrl: p.epgUrl || '' },
+      provider: describe(p),
+      // The other active providers (catalogUnion.js): their titles are asked too, in their own databases.
+      members: (current.active || []).slice(1).filter((x) => x.type !== 'm3u').map(describe),
       search: (await getSearch().catch(() => null)) || null,
       excluded,
       cleanTitles: Boolean(await getCleanTitles()),

@@ -54,6 +54,32 @@
     .btn {
       margin: 0 0 0 12px;
     }
+
+    // Active or not: its label and the switch.
+    .btn.provider-toggle {
+      display: flex;
+      align-items: center;
+      width: auto;
+
+      .toggle {
+        margin-left: 14px;
+      }
+    }
+  }
+}
+
+// An active provider: the table of its lists right under its row, as one block.
+.provider-block {
+  margin-bottom: 20px;
+
+  .provider-row {
+    margin-bottom: 0;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .provider-table {
+    border-top: 1px solid rgba($text, 0.08);
+    border-radius: 0 0 6px 6px;
   }
 }
 

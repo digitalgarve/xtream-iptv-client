@@ -10,6 +10,7 @@ import { ListModel } from '../focus/models.js';
 import { ensureVisible } from '../scroll.js';
 import { listCategories } from '../../services/catalogQuery.js';
 import { markStale } from '../../services/catalogSync.js';
+import { ownCategories } from '../../services/catalogUnion.js';
 import { openProviderDb } from '../../db/providerDb.js';
 import { icon } from '../icons.js';
 import { log } from '../../core/logger.js';
@@ -195,7 +196,8 @@ export function createCategoriesPage(ctx, params = {}) {
       providerId = wanted;
     }
     if (destroyed) return;
-    categories = (await listCategories(db, type)).map((c) => ({ id: c.id, name: c.name }));
+    // Only this provider's own categories (the main provider's database also holds those of the other active ones, catalogUnion.js).
+    categories = ownCategories(await listCategories(db, type)).map((c) => ({ id: c.id, name: c.name }));
     excluded = await ctx.settings.getExcluded(providerId, type);
     original = new Set(excluded);
     build(0);
@@ -217,10 +219,14 @@ export function createCategoriesPage(ctx, params = {}) {
       await ctx.settings.setExcluded(providerId, type, Array.from(excluded));
       if (excluded.size !== original.size || Array.from(excluded).some((id) => !original.has(id))) {
         await ctx.rebuildCatalog([type], { providerId }); // in the catalog worker: the exclusions were saved just above
-        // A category shown again: its items were not kept, so the type is downloaded again (now if this is the active provider).
+        // Another active provider (its lists go into the main one's catalog): the unified catalog is worked out again too.
+        const active = ctx.providers.listActive ? await ctx.providers.listActive() : [];
+        const member = active.findIndex((p) => p.id === providerId) > 0;
+        if (member) await ctx.rebuildCatalog([type]);
+        // A category shown again: its items were not kept, so the type is downloaded again (now if this provider is active).
         if (Array.from(original).some((id) => !excluded.has(id))) {
           await markStale(db, type);
-          if ((await ctx.providers.getActiveId()) === providerId) ctx.catalog.start({ types: [type], force: true });
+          if (member || (await ctx.providers.getActiveId()) === providerId) ctx.catalog.start({ types: [type], force: true, only: providerId });
         }
       }
       original = new Set(excluded);

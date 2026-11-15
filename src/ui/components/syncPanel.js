@@ -3,6 +3,7 @@ import { createButton } from '../atoms/button.js';
 import { createHint } from '../atoms/hint.js';
 import { createPanel, createPanelButtons } from '../atoms/panel.js';
 import { createTableRow, createTableStatus, createRowButtons } from '../atoms/tableRow.js';
+import { createCountsTable } from '../atoms/countsTable.js';
 import { t, i18n } from '../../i18n/index.js';
 import { MediaType } from '../../services/mediaType.js';
 import { formatNumber, formatDateTime, formatSeconds } from '../../core/format.js';
@@ -62,12 +63,29 @@ function rowButtons(removeLabel, refreshLabel) {
  * Catalog sync status (per type rows, engine, timings) and the manual "update now" button, for the
  * active provider. The page that hosts it owns the focus zone of `button`.
  */
+/** "12 (40)": a number and, in brackets, the one it comes from ('' when unknown). */
+export const pairText = (a, b, locale) => (a === undefined || a === null ? '' : `${formatNumber(a, locale)} (${formatNumber(b || 0, locale)})`);
+
+/**
+ * The counts of the unified catalog (what the app shows, made of every active provider, see catalogUnion.js): movies, series and
+ * channels; the cards with several versions (their versions); the channel groups (their channels); the networks (their channels).
+ */
+export function unifiedCounts(status, locale) {
+  const m = status.movie || {};
+  const s = status.series || {};
+  const l = status.live || {};
+  const n = (value) => (value === undefined || value === null ? '' : formatNumber(value, locale));
+  return [n(m.entryCount), n(s.entryCount), n(l.entryCount), pairText(m.versionGroups, m.versionedCount, locale), pairText(s.versionGroups, s.versionedCount, locale), pairText(l.groupCount, l.groupedCount, locale), pairText(l.networkCount, l.networkedCount, locale)];
+}
+
 export function createSyncPanel(ctx) {
-  const rows = TYPES.map((type) => {
-    const buttons = rowButtons(t('settings.typeRemove', { type: t(LABEL_KEY[type]) }), t('settings.typeUpdate', { type: t(LABEL_KEY[type]) }));
-    const row = createTableRow({ name: t(LABEL_KEY[type]), buttons: buttons.el });
-    return { type, status: row.status, buttons, el: row.el };
+  // The unified catalog: its counts in columns and one pair of buttons (remove it / work it out again), see catalogUnion.js.
+  const unifiedButtons = rowButtons(t('settings.unifiedRemove'), t('settings.unifiedRebuild'));
+  const counts = createCountsTable({
+    columns: [t('nav.movies'), t('nav.series'), t('nav.live'), t('settings.count.groupedMovies'), t('settings.count.groupedSeries'), t('settings.count.groupedLive'), t('settings.count.networks')],
+    buttons: [unifiedButtons.remove, unifiedButtons.refresh],
   });
+  const { el: stateRow, status: stateStatus } = createTableRow({ name: t('settings.catalogState'), status: createTableStatus() });
   // The programme guide of the provider: what the last download holds, with its own update / remove buttons.
   const epgButtons = rowButtons(t('settings.epgRemove'), t('settings.epgUpdate'));
   const { el: epgRow, status: epgStatus } = createTableRow({ name: t('operations.epg'), buttons: epgButtons.el });
@@ -89,7 +107,7 @@ export function createSyncPanel(ctx) {
   const { el: timingRow, status: timingStatus } = createTableRow({ name: t('home.syncTiming'), status: createTableStatus() });
   const info = createHint({ className: 'sync-info' });
   const providerName = h('span', { class: 'panel-provider' });
-  const { el } = createPanel({ title: t('home.catalog'), titleExtra: providerName, rows: [rows.map((r) => r.el), epgRow, engineRow, timingRow], after: info });
+  const { el } = createPanel({ title: t('home.catalog'), titleExtra: providerName, rows: [counts.el, stateRow, epgRow, engineRow, timingRow], after: info });
   let persisted = {};
   let providerId = null;
   let wasRunning = false;
@@ -106,9 +124,12 @@ export function createSyncPanel(ctx) {
   function render() {
     const state = ctx.catalog.getState();
     const locale = i18n.getLocale();
-    rows.forEach((row) => {
-      row.status.textContent = describeType(state.types[row.type], persisted[row.type], locale);
-    });
+    counts.set(unifiedCounts(persisted, locale));
+    // The work going on (a type being downloaded or worked out), otherwise when the catalog was last made.
+    const busy = TYPES.find((type) => state.types[type] && ACTIVE_PHASES.has(state.types[type].phase));
+    const failed = TYPES.find((type) => state.types[type] && state.types[type].phase === 'error');
+    const last = Math.max(0, ...TYPES.map((type) => (persisted[type] && persisted[type].lastSync) || 0));
+    stateStatus.textContent = busy ? `${t(LABEL_KEY[busy])}: ${describeType(state.types[busy], persisted[busy], locale)}` : failed ? `${t(LABEL_KEY[failed])}: ${describeType(state.types[failed], null, locale)}` : last ? t('home.updatedAt', { time: formatDateTime(last, locale) }) : t('common.never');
     const meta = TYPES.map((type) => persisted[type]).filter(Boolean);
     const total = (key) => formatSeconds(meta.reduce((sum, m) => sum + (m[key] || 0), 0));
     engineStatus.textContent = [state.mode ? t(`home.engine.${state.mode}`) : '', state.paused ? t('home.paused') : ''].filter(Boolean).join(' · ');
@@ -117,22 +138,18 @@ export function createSyncPanel(ctx) {
     timingRow.style.display = meta.length ? '' : 'none';
     const lines = state.error ? [t(`error.${state.error.code}`)] : [];
     info.textContent = lines.join(' · ');
-    rows.forEach((row) => row.buttons.refresh.classList.toggle('disabled', state.running));
+    unifiedButtons.refresh.classList.toggle('disabled', state.running);
   }
 
   return {
     el,
-    /** Per media type: { type, remove, refresh } (the buttons at the end of its row). */
-    rowButtons: rows.map((row) => ({ type: row.type, remove: row.buttons.remove, refresh: row.buttons.refresh })),
+    /** The unified catalog's buttons: { remove, refresh }. */
+    unifiedButtons: { remove: unifiedButtons.remove, refresh: unifiedButtons.refresh },
     /** The guide row's buttons: { remove, refresh }. */
     epgButtons: { remove: epgButtons.remove, refresh: epgButtons.refresh },
     refreshEpg: () => refreshEpg(),
-    /** Only the media types the provider has (a playlist has no series): the other rows are hidden. */
-    setTypes(types) {
-      rows.forEach((row) => {
-        row.el.style.display = types.indexOf(row.type) >= 0 ? '' : 'none';
-      });
-    },
+    /** (The unified catalog shows every type: kept for the callers.) */
+    setTypes() {},
     /** Nickname of the active provider, next to the title. */
     setProviderName(name) {
       providerName.textContent = name ? ` · ${name}` : '';

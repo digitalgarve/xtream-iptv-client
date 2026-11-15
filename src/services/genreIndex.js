@@ -188,6 +188,8 @@ export function createGenreIndex({ active, syncLog = null, getTmdbKey = () => ''
     const p = current.provider;
     const payload = {
       provider: { id: p.id, type: p.type || 'xtream', baseUrl: p.baseUrl, username: p.username, password: p.password },
+      // The other active providers (catalogUnion.js): their titles are asked to them.
+      others: (current.active || []).slice(1).map((o) => ({ id: o.id, slot: o.slot, type: o.type || 'xtream', baseUrl: o.baseUrl, username: o.username, password: o.password })),
       tmdbKey: getTmdbKey(),
       language: getLanguage(),
       phase: name,

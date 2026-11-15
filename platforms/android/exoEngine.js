@@ -19,7 +19,10 @@ export function createExoEngine(env = typeof window !== 'undefined' ? window : {
   const call = (method, options = {}) => {
     const cap = bridge(env);
     if (!cap) return Promise.resolve();
-    return cap.nativePromise(PLUGIN, method, options).catch((err) => log.warn(`ExoPlayer ${method} failed`, err && err.message));
+    return cap.nativePromise(PLUGIN, method, options).catch((err) => {
+      log.warn(`ExoPlayer ${method} failed`, err && err.message);
+      return false;
+    });
   };
 
   function onEvent(event) {
@@ -67,7 +70,7 @@ export function createExoEngine(env = typeof window !== 'undefined' ? window : {
       return true;
     },
     getSubtitleTracks: () => tracks.text.map((track) => ({ index: track.index, language: track.language || '' })),
-    getAudioTracks: () => tracks.audio.map((track) => ({ index: track.index, language: track.language || '', current: Boolean(track.current) })),
+    getAudioTracks: () => tracks.audio.map((track) => ({ index: track.index, language: track.language || '', label: track.label || '', containerId: track.id || '', current: Boolean(track.current) })),
     setAudioTrack: (index) => call('selectAudio', { index }),
     /** index = track to show (drawn by ExoPlayer), null = subtitles off. */
     setSubtitleTrack: (index) => call('selectText', { index: index === null ? -1 : index }),

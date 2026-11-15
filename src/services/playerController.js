@@ -235,6 +235,24 @@ export function subtitleLabel(track, position, fallback) {
   return LANGUAGE_NAMES[code] || code.toUpperCase();
 }
 
+/** Use the explicit language first, then an unambiguous language in the audio track name. */
+export function audioLanguage(track) {
+  const label = String(track.label || '').trim();
+  let language = String(track.language || '').trim().toLowerCase();
+  if (!language || language === 'und') {
+    // Two-letter codes can be ordinary words ("en", "de", "it") in a track title.
+    const words = label.toLowerCase().split(/[^a-zà-ÿ]+/);
+    const matches = Object.keys(LANGUAGE_ALIASES).filter((code) => LANGUAGE_ALIASES[code].some((alias) => words.includes(alias)));
+    language = matches.length === 1 ? matches[0] : '';
+  }
+  return Object.keys(LANGUAGE_ALIASES).find((code) => isLanguage(language, code)) || language;
+}
+
+export function audioLabel(track, position, fallback) {
+  const language = audioLanguage(track);
+  return language ? subtitleLabel({ language }, position, fallback) : String(track.label || '').trim() || fallback.replace('{n}', String(position));
+}
+
 /** Next aspect mode in the cycle. */
 export const nextAspect = (modes, current) => modes[(modes.indexOf(current) + 1) % modes.length];
 

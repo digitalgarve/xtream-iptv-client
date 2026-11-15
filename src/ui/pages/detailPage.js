@@ -29,6 +29,7 @@ import { addToCollection } from '../components/collectionFlows.js';
 import { log } from '../../core/logger.js';
 
 import { flattenEpisodes, pickNextEpisode, formatRuntime, seasonsLabel, episodesLabel, detailMetaParts, castFrom, tagsFrom, seasonOptionLabel, seasonIndexOf, landingIndex } from './detail/model.js';
+import { createDetailAudio } from './detail/audio.js';
 import { TOPBAR_ZONE } from '../components/topbar.js';
 
 export { flattenEpisodes, pickNextEpisode, formatRuntime, seasonsLabel, episodesLabel, detailMetaParts, castFrom, tagsFrom, seasonOptionLabel, seasonIndexOf, landingIndex };
@@ -70,6 +71,8 @@ export function createDetailPage(ctx, params) {
   const versionEl = h('div', { class: 'detail-version' });
   const plotEl = h('p', { class: 'detail-plot' });
   const actionsEl = h('div', { class: 'detail-actions' });
+  const audio = createDetailAudio(ctx);
+  const audioEl = h('div', { class: 'detail-version' });
   const collectionsEl = h('div', { class: 'detail-categories' });
   const categoriesEl = h('div', { class: 'detail-categories' });
   const tagsEl = h('div', { class: 'detail-categories' });
@@ -85,7 +88,7 @@ export function createDetailPage(ctx, params) {
     { class: 'page detail loading' },
     backdropEl,
     poster,
-    h('div', { class: 'detail-body' }, titleEl, metaEl, versionEl, actionsEl, plotEl, collectionsEl, providersEl, categoriesEl, tagsEl, ratingEl, directorEl, companiesEl, epgEl, episodesEl, castEl, relatedEl),
+    h('div', { class: 'detail-body' }, titleEl, metaEl, versionEl, audioEl, actionsEl, plotEl, collectionsEl, providersEl, categoriesEl, tagsEl, ratingEl, directorEl, companiesEl, epgEl, episodesEl, castEl, relatedEl),
   );
 
   const data = () => ({
@@ -107,6 +110,8 @@ export function createDetailPage(ctx, params) {
       playlist,
       index: startIndex || 0,
       restart,
+      audioSelection: audio.trackSelectionFor(entry.type, playlist[startIndex || 0]),
+      audioLanguage: audio.selectionFor(entry.type, playlist[startIndex || 0]),
       live: params.live || null,
       epgChannelId: entry.epgChannelId,
       section: params.section,
@@ -564,6 +569,14 @@ export function createDetailPage(ctx, params) {
       next.push({ id: 'detailVersion', zone: select.zone });
     }
 
+    clear(audioEl);
+    const audioTarget = entry.type === 'movie' ? selectedMember : entry.type === 'series' && episodes.length ? pickNextEpisode(episodes, records).episode : null;
+    if (audioTarget) {
+      audio.update(entry.type, audioTarget);
+      audioEl.appendChild(audio.el);
+      next.push({ id: 'detailAudio', zone: audio.zone });
+    }
+
     // Icon-only buttons. Films and series: Play (from the point reached, if any), Restart (only then: from the start), Watched, Trailer,
     // Favourite, Add to a collection. Channels: Play, Favourite, Add to a collection, then their own (network, merge / group / ungroup).
     // A button whose action is done shows the opposite one in the same place (Not watched, Remove from favourites).
@@ -859,6 +872,7 @@ export function createDetailPage(ctx, params) {
     },
     destroy() {
       destroyed = true;
+      audio.stop();
       rows.forEach((r) => ctx.focus.unregister(r.id));
       rows = [];
     },

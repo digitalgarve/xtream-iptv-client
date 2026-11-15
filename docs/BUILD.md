@@ -236,3 +236,19 @@ Terser is set to ES2019 for the same reason, and `scripts/check-dist.js` fails t
 
 Anything that depends on a platform goes through the adapter in `platforms/<name>/platform.js` (see the contract in `src/platform/contract.js` and [MULTIPLATFORM.md](MULTIPLATFORM.md));
 app code never calls platform APIs directly.
+
+## Release with one manual workflow run
+
+Open **Actions → Release → Run workflow**, select **main**, and start the workflow.
+Leave `version` empty to increment the highest stable Git tag / package version by one patch
+(for example `2.1.5` → `2.1.6`), or enter a higher `X.Y.Z` version explicitly.
+
+The workflow checks the code before creating the tag and GitHub release, then builds and uploads
+all platform packages. The Pages job publishes the online update channels and explicitly requests
+and verifies a Pages build. Keep **Settings → Pages → Deploy from a branch → gh-pages / root**.
+Autoupdate apps find the published version at their next start or via the manual update check.
+
+A rerun of the same workflow uses its existing release; failed jobs can be retried without a new
+version. A new manual run creates a new release. Publishing a release manually under **Releases**
+also remains supported. A release can exist before its package jobs finish: check the Actions
+results before distributing it. Online updates can become available before other platform jobs finish.

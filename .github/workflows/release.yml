@@ -1,6 +1,6 @@
 name: Release
 
-# Runs when a GitHub release is published: one job checks the code, then one job per platform builds its package and attaches it
+# Runs manually (creates the next release), or when a GitHub release is published: one job checks the code, then one job per platform builds its package and attaches it
 # to the release. Everything a platform needs (manifest, certificate, packaging script) is in platforms/<name>/; the app code is the
 # same for all. The release tag must be a plain semantic version (v1.2.3 or 1.2.3): Tizen widget versions only accept numeric x.y.z.
 #
@@ -17,8 +17,18 @@ name: Release
 # ANDROID_KEY_PASSWORD) for platforms/android/release.keystore — without them the APKs are signed with a debug key.
 # TMDB and Trakt keys are not part of the build: they are typed in the app Settings.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version X.Y.Z (leave empty for the next patch version)'
+        required: false
+        type: string
   release:
     types: [published]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -28,28 +38,39 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require main for manual releases
+        if: github.event_name == 'workflow_dispatch'
+        run: test "$GITHUB_REF" = refs/heads/main
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Validate tag and derive version
+      - name: Determine release version
         id: version
         env:
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Release tag '$TAG' must look like v1.2.3 or 1.2.3 (Tizen needs numeric x.y.z)."
-            exit 1
-          fi
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: node scripts/release-version.js
 
       - run: npm ci
       - run: npm run lint
       - run: npm test
+
+      - name: Create release after successful checks
+        if: steps.version.outputs.create == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes --notes-file release-notes.md
 
   # One job per platform, all after `verify`: a platform that fails does not stop the others.
   tizen:
@@ -90,7 +111,7 @@ jobs:
       - name: Upload assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: gh release upload "$TAG" release/* --clobber
 
   webos:
@@ -125,7 +146,7 @@ jobs:
       - name: Upload assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: gh release upload "$TAG" release/* --clobber
 
   # The desktop app, each system on its own machine (electron-builder makes the installer of the system it runs on).
@@ -175,7 +196,7 @@ jobs:
       - name: Upload assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: gh release upload "$TAG" release/* --clobber
 
   android:
@@ -221,13 +242,16 @@ jobs:
       - name: Upload assets to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: gh release upload "$TAG" release/* --clobber
 
   # Updates from the app itself (src/services/updates.js): the web code of every platform's build goes to the gh-pages branch, served by
   # GitHub Pages, with version.json pointing at it. Installed apps find it at their next start. Raise `updates.minShell` in package.json
   # when a release changes the native parts (config.xml privileges, Android plugins, Electron): older packages are then asked to reinstall.
   pages:
+    permissions:
+      contents: write
+      pages: write
     needs: verify
     runs-on: ubuntu-latest
     env:
@@ -266,5 +290,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Online update $VERSION"
+          git diff --cached --quiet || git commit -m "Online update $VERSION"
           git push
+
+      - name: Deploy GitHub Pages and wait for the published commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          expected="$(git -C pages rev-parse HEAD)"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds"
+          for attempt in {1..60}; do
+            result="$(gh api "repos/$GITHUB_REPOSITORY/pages/builds/latest" --jq '.commit + " " + .status')"
+            if [ "$result" = "$expected built" ]; then exit 0; fi
+            if [ "$result" = "$expected errored" ]; then
+              echo "::error::GitHub Pages deployment failed"
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::GitHub Pages did not publish the update within 10 minutes"
+          exit 1

@@ -35,7 +35,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test -- --runInBand
-      - run: npm run build:tizen
+      - run: npm run build:tizen -- --env youtube --env autoupdate
 
       - name: Sign the widget
         env:
@@ -44,7 +44,7 @@ jobs:
           CERT_DISTRIBUTOR_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_CERT_BASE64 }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          bash platforms/tizen/package.sh "$VERSION" release
+          VARIANT=_youtube_autoupdate bash platforms/tizen/package.sh "$VERSION" release
 
       - name: Upload widget and checksum
         uses: actions/upload-artifact@v4

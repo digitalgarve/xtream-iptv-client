@@ -1,6 +1,6 @@
 {
   "name": "xtream-iptv",
-  "version": "0.1.0",
+  "version": "2.1.5",
   "description": "Xtream Codes IPTV client for Samsung Tizen TVs",
   "private": true,
   "engines": {

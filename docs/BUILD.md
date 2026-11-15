@@ -79,9 +79,9 @@ To build a signed TV package on GitHub without publishing a release:
 1. Add the repository Actions secret `TIZEN_CERT_PASSWORD` under **Settings → Secrets and variables → Actions**.
    It must be the shared password of your Samsung `author.p12` and `distributor.p12`. Add their base64-encoded contents as `TIZEN_AUTHOR_CERT_BASE64` and `TIZEN_DISTRIBUTOR_CERT_BASE64`. Keep all three files outside Git.
 2. Push `.github/workflows/tizen.yml` to the default branch, then open **Actions → Build Tizen TV → Run workflow** and choose the branch to build.
-3. Download the **tizen-tv** artifact from the completed run and unzip it. It contains `xtream-iptv-<version>_tizen.wgt` and its SHA-256 checksum.
+3. Download the **tizen-tv** artifact from the completed run and unzip it. It contains `xtream-iptv-<version>_tizen_youtube_autoupdate.wgt` and its SHA-256 checksum.
 
-The workflow uses the version in `package.json`, runs lint and tests, and builds the standard package (no in-app trailer service or automatic updates).
+The workflow uses the version in `package.json`, runs lint and tests, and builds the YouTube + automatic updates variant. It follows the `tizen_youtube` channel on this repository's GitHub Pages; publishing a release supplies future online updates.
 The distributor certificate must include the target TV; see the [installation guide](../platforms/tizen/README.md).
 
 For a local build on Linux:

@@ -88,6 +88,7 @@
   "home.timing": "Download {fetch} s · Einträge {items} s · Titel {entries} s",
   "providers.use": "Aktivieren",
   "providers.current": "Aktuell",
+  "providers.liveFormat": "Live-TV-Format",
   "providers.edit": "Bearbeiten",
   "providers.categories": "Sichtbare Kategorien",
   "providers.remove": "Entfernen",

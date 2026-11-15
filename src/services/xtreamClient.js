@@ -100,13 +100,14 @@ function asArray(data) {
 }
 
 export class XtreamClient {
-  constructor({ baseUrl, username, password, fetchJson: fetcher = fetchJson, wrapUrl = wrapApiUrl }) {
+  constructor({ baseUrl, username, password, liveFormat = 'auto', allowedFormats = [], fetchJson: fetcher = fetchJson, wrapUrl = wrapApiUrl }) {
     this.baseUrl = baseUrl;
     this.username = username;
     this.password = password;
     this.fetcher = fetcher;
     this.wrapUrl = wrapUrl;
-    this.allowedFormats = [];
+    this.allowedFormats = allowedFormats;
+    this.liveFormat = ['m3u8', 'ts'].includes(liveFormat) ? liveFormat : 'auto';
   }
 
   apiUrl(action, params = {}) {
@@ -162,7 +163,7 @@ export class XtreamClient {
   }
 
   streamUrl(type, id, ext) {
-    const extension = ext || (type === MediaType.LIVE ? pickLiveFormat(this.allowedFormats) : 'mp4');
+    const extension = type === MediaType.LIVE ? (this.liveFormat === 'auto' ? pickLiveFormat(this.allowedFormats) : this.liveFormat) : ext || 'mp4';
     const user = encodeURIComponent(this.username);
     const pass = encodeURIComponent(this.password);
     return `${this.baseUrl}/${STREAM_PATH[type]}/${user}/${pass}/${id}.${extension}`;

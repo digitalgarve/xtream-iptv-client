@@ -4,7 +4,7 @@ import { createUnionClient } from './unionClient.js';
 
 /**
  * Shared handle on the active provider: its database (opened once, kept open) and an API client that
- * authenticates lazily (needed for the live stream format). Pages never close the shared database;
+ * uses the saved live format and account information. Pages never close the shared database;
  * call `release()` before a provider is deleted so the delete is not blocked.
  */
 export function createActiveProvider({ providers, openDb = openProviderDb, makeClient = createProviderClient }) {
@@ -12,6 +12,7 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
   let pending = null;
 
   const same = (a, b) => a.id === b.id && a.baseUrl === b.baseUrl && a.username === b.username && a.password === b.password && a.playlistUrl === b.playlistUrl && a.epgUrl === b.epgUrl;
+  const sameFormats = (a, b) => a.liveFormat === b.liveFormat && JSON.stringify(a.allowedFormats) === JSON.stringify(b.allowedFormats);
 
   function release() {
     if (cache) {
@@ -33,16 +34,20 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
       release();
       return null;
     }
-    if (cache && sameSet(cache.active, active)) return cache;
-    release();
-    const db = await openDb(provider.id);
-    db.onversionchange = () => db.close();
+    let db = cache && sameSet(cache.active, active) ? cache.db : null;
+    if (db && cache.active.every((p, i) => sameFormats(p, active[i]))) return cache;
+    // Format updates refresh clients without closing the database retained by open pages.
+    if (!db) {
+      release();
+      db = await openDb(provider.id);
+      db.onversionchange = () => db.close();
+    }
     // Several providers active: one catalog (the main one's database, catalogUnion.js) and a client that routes each title to its provider.
     const mainClient = makeClient(provider);
     const others = active.slice(1).map((p) => ({ slot: p.slot, provider: p, client: makeClient(p) }));
     const client = others.length ? createUnionClient(mainClient, others) : mainClient;
     // `sources`: who the titles of the catalog come from (slot 0: the main provider).
-    cache = { provider, db, client, auth: null, active, sources: [{ slot: 0, provider }].concat(others.map((o) => ({ slot: o.slot, provider: o.provider }))) };
+    cache = { provider, db, client, active, sources: [{ slot: 0, provider }].concat(others.map((o) => ({ slot: o.slot, provider: o.provider }))) };
     // A playlist client gives stream addresses once it has read the playlist (the player asks for them without waiting).
     if (cache.client.prepare) await cache.client.prepare().catch(() => undefined);
     return cache;
@@ -53,19 +58,6 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
     get() {
       if (!pending) pending = load().finally(() => { pending = null; });
       return pending;
-    },
-    /** Client that has authenticated at least once (allowed live formats are known). */
-    async authenticatedClient() {
-      const current = await this.get();
-      if (!current) return null;
-      if (!current.auth) {
-        current.auth = current.client.authenticate().catch((err) => {
-          current.auth = null;
-          throw err;
-        });
-      }
-      await current.auth;
-      return current.client;
     },
     release,
   };

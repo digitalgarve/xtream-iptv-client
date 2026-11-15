@@ -133,3 +133,16 @@ describe('gate', () => {
     await expect(gate.wait()).resolves.toBeUndefined();
   });
 });
+
+test('account checks persist allowed formats; expiry-only reports retain them', async () => {
+  const update = jest.fn(async () => undefined);
+  const worker = new FakeWorker({ script: (w) => {
+    w.emit({ event: 'account', expiresAt: 123, allowedFormats: ['ts'] });
+    w.emit({ event: 'account', expiresAt: 456 });
+    doneScript(w);
+  } });
+  const service = new CatalogSyncService({ providers: { ...providers, update }, settings, createWorker: () => worker });
+  await service.start();
+  expect(update).toHaveBeenNthCalledWith(1, 'p1', { expiresAt: 123, allowedFormats: ['ts'] });
+  expect(update).toHaveBeenNthCalledWith(2, 'p1', { expiresAt: 456 });
+});

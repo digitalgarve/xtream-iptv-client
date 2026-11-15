@@ -46,6 +46,8 @@ still being tested on real devices.
 - Trailers from YouTube: in the app's own player on Samsung TVs, in the YouTube app or the browser elsewhere.
 
 **Live TV**
+
+- **Live TV format** on the Providers page selects Auto, HLS (`m3u8`) or MPEG-TS (`ts`) per Xtream provider. Auto uses the formats saved by the account check during setup/start-up catalog sync, falling back to HLS when unknown. Starting a channel does not wait for an account API request.
 - The programme on air on every channel card, the next 24 hours on the channel page, a full grid guide and scheduled viewing that
   opens the channel when a programme starts, with an alert of the system when the app is in the background or closed (Android TV /
   Fire TV and desktop notifications; on Samsung TVs the app starts on the channel).

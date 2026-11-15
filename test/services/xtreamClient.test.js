@@ -92,3 +92,12 @@ describe('helpers', () => {
     expect(decodeBase64Utf8('not base64 !!')).toBe('not base64 !!');
   });
 });
+
+test('saved provider formats work without authentication; explicit live format overrides stream metadata', () => {
+  const { createProviderClient } = require('../../src/services/providerTypes.js');
+  const provider = { baseUrl: 'http://h', username: 'u', password: 'p', allowedFormats: ['ts'] };
+  expect(createProviderClient(provider).streamUrl('live', 5)).toBe('http://h/live/u/p/5.ts');
+  expect(createProviderClient({ ...provider, liveFormat: 'm3u8' }).streamUrl('live', 5, 'ts')).toBe('http://h/live/u/p/5.m3u8');
+  expect(createProviderClient({ ...provider, liveFormat: 'ts' }).streamUrl('movie', 5, 'mkv')).toBe('http://h/movie/u/p/5.mkv');
+  expect(createProviderClient({ ...provider, allowedFormats: undefined }).streamUrl('live', 5)).toBe('http://h/live/u/p/5.m3u8');
+});

@@ -14,7 +14,7 @@ import { log } from '../../core/logger.js';
 import { openProviderDialog } from './providerSetupPage.js';
 
 const ZONE_ID = 'providers';
-export const ProviderAction = Object.freeze({ USE: 'use', CATEGORIES: 'categories', EDIT: 'edit', REMOVE: 'remove', ADD: 'add', REFRESH_LISTS: 'refreshLists', REMOVE_LISTS: 'removeLists' });
+export const ProviderAction = Object.freeze({ USE: 'use', CATEGORIES: 'categories', EDIT: 'edit', FORMAT: 'liveFormat', REMOVE: 'remove', ADD: 'add', REFRESH_LISTS: 'refreshLists', REMOVE_LISTS: 'removeLists' });
 
 /** Host part of a server URL, for display (never shows credentials). */
 export function hostOf(baseUrl) {
@@ -22,7 +22,7 @@ export function hostOf(baseUrl) {
 }
 
 /**
- * Focusable cells, line by line: per provider its toggle (active or not), categories, edit, remove; under an active one its table's
+ * Focusable cells, line by line: per provider its toggle (active or not), categories, edit, remove, and Xtream live format; under an active one its table's
  * update / remove buttons (its downloaded lists); then "add a provider". `line` and `col` place each cell (see linesModel).
  * `activeIds`: the active providers (a string: the only one).
  */
@@ -32,7 +32,7 @@ export function buildCells(providers, activeIds) {
   let line = 0;
   providers.forEach((provider) => {
     const on = active.has(provider.id);
-    [ProviderAction.USE, ProviderAction.CATEGORIES, ProviderAction.EDIT, ProviderAction.REMOVE].forEach((action, col) => cells.push({ action, provider, line, col, ...(action === ProviderAction.USE ? { on } : {}) }));
+    [ProviderAction.USE, ProviderAction.CATEGORIES, ProviderAction.EDIT, ProviderAction.REMOVE, ...(provider.type === 'm3u' ? [] : [ProviderAction.FORMAT])].forEach((action, col) => cells.push({ action, provider, line, col, ...(action === ProviderAction.USE ? { on } : {}) }));
     line += 1;
     if (on) {
       cells.push({ action: ProviderAction.REFRESH_LISTS, provider, line, col: 0 });
@@ -129,6 +129,7 @@ export function createProvidersPage(ctx, params = {}) {
         }
         if (cell.action === ProviderAction.REFRESH_LISTS) return createButton({ label: t('providers.listsUpdate'), icon: 'refresh', variant: 'primary', iconOnly: true, className: 'panel-button' });
         if (cell.action === ProviderAction.REMOVE_LISTS) return createButton({ label: t('providers.listsRemove'), icon: 'remove', variant: 'danger', iconOnly: true, className: 'panel-button' });
+        if (cell.action === ProviderAction.FORMAT) return createButton({ label: `${t('providers.liveFormat')}: ${cell.provider.liveFormat === 'ts' ? 'MPEG-TS' : cell.provider.liveFormat === 'm3u8' ? 'HLS' : t('settings.language.auto')}`, className: 'provider-action' });
         const iconName = { [ProviderAction.CATEGORIES]: 'categories', [ProviderAction.EDIT]: 'edit', [ProviderAction.REMOVE]: 'remove' }[cell.action];
         return createButton({ label: t(`providers.${cell.action}`), icon: iconName, iconOnly: true, ariaLabel: t(`providers.${cell.action}`), variant: cell.action === ProviderAction.REMOVE ? 'danger' : '', className: 'provider-action' });
       });
@@ -173,6 +174,18 @@ export function createProvidersPage(ctx, params = {}) {
       case ProviderAction.CATEGORIES:
         ctx.router.push('categories', { providerId: provider.id, section: 'provider' });
         break;
+      case ProviderAction.FORMAT: {
+        const value = await ctx.dialogs.choose({
+          title: t('providers.liveFormat'),
+          options: [{ label: t('settings.language.auto'), value: 'auto' }, { label: 'HLS (m3u8)', value: 'm3u8' }, { label: 'MPEG-TS (ts)', value: 'ts' }],
+          selected: provider.liveFormat || 'auto',
+        });
+        if (!['auto', 'm3u8', 'ts'].includes(value)) return;
+        await ctx.providers.update(provider.id, { liveFormat: value });
+        await render(cells.indexOf(cell));
+        ctx.notices.success(t('notice.saved'), { key: 'provider' });
+        break;
+      }
       case ProviderAction.EDIT:
         if (await openProviderDialog(ctx, { providerId: provider.id })) await render(cells.indexOf(cell));
         break;

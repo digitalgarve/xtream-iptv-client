@@ -2,6 +2,9 @@
 
 Package: `xtream-iptv-<version>_tizen.wgt`, a **signed production widget** attached to every [release](../../../../releases).
 
+To build a package without a release, run **Actions → Build Tizen TV → Run workflow** and download the **tizen-tv** artifact.
+See [build setup and signing secret](../../docs/BUILD.md#tizen).
+
 Requirements: a Samsung TV with **Tizen 6.0 or newer** (developed on a 2021 QLED, Chromium ~76) and an Xtream Codes provider account.
 
 ## Install on the TV

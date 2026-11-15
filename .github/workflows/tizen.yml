@@ -1,0 +1,48 @@
+name: Build Tizen TV
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tizen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check signing secret
+        env:
+          CERT_PASSWORD: ${{ secrets.TIZEN_CERT_PASSWORD }}
+        run: |
+          if [ -z "$CERT_PASSWORD" ]; then
+            echo "::error::Set the repository Actions secret TIZEN_CERT_PASSWORD to the password of platforms/tizen/tizencert.p12."
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --runInBand
+      - run: npm run build:tizen
+
+      - name: Sign the widget
+        env:
+          CERT_PASSWORD: ${{ secrets.TIZEN_CERT_PASSWORD }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          bash platforms/tizen/package.sh "$VERSION" release
+
+      - name: Upload widget and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: tizen-tv
+          path: |
+            release/*.wgt
+            release/*.wgt.sha256
+          if-no-files-found: error

@@ -57,13 +57,13 @@ export function createPlayerPage(ctx, params) {
   let providerId = null; // known once playback started, so saving on exit needs no await
   let aspect = 'fit';
   let streamUrl = ''; // the address being played (its hash finds the subtitles made for that file)
-  let audioTrack = null; // null = the file's default
   let appliedFor = 0; // load token the aspect mode was last applied to
   // The tracks of a stream are looked at again for a while after it starts: some (HLS audio groups, DVB subtitles) are listed late.
   const TRACK_CHECK_MS = 5000;
   const TRACK_CHECK_FOR_MS = 60000;
   let trackCheckAt = 0;
   let trackCheckUntil = 0;
+  let audioTrack = null; // fallback when the player cannot report the current track
   let audioPicked = false; // the audio of this stream was chosen (by the user, or the language of the app once)
   let focusMode = false; // the D-pad moves over the controls (progress pointer + buttons) instead of seeking
   let barFocus = false; // focus on the progress pointer (otherwise on a button)
@@ -115,7 +115,7 @@ export function createPlayerPage(ctx, params) {
     { id: 'aspect', icon: 'aspect', label: () => t('player.aspect'), group: 'end', run: () => cycleAspect() },
     // Live channels: only when the stream carries subtitle tracks (DVB, teletext, WebVTT of an HLS stream), the provider gives no others.
     { id: 'subtitles', icon: 'subtitles', label: () => t('player.subtitles'), group: 'end', hidden: isLive, run: () => subtitles.open() },
-    { id: 'audio', icon: 'audio', label: () => t('player.audio'), group: 'end', hidden: true, run: () => openAudio() }, // shown once the file has several audio tracks
+    { id: 'audio', icon: 'audio', label: () => t('player.audio'), group: 'end', run: () => openAudio() },
     { id: 'fullscreen', icon: 'fullscreen', label: () => t('player.fullscreen'), group: 'end', run: () => toggleFullscreen() }, // desktop only: the window is not always full screen
     // Series with "play the next episode" on: the end credits start here (the pointer's position), for every episode; again = removed.
     { id: 'credits', icon: 'credits', label: () => t(creditsOffset ? 'player.credits.remove' : 'player.credits'), seriesOnly: true, hidden: true, group: 'end', run: () => toggleCredits() },
@@ -365,7 +365,6 @@ export function createPlayerPage(ctx, params) {
     focusIndex = at >= 0 ? at : Math.min(focusIndex, shown().length - 1);
     paintFocus();
   }
-  const setAudioVisible = (visible) => setVisible('audio', visible);
 
   function paintFocus() {
     const list = shown();
@@ -459,47 +458,63 @@ export function createPlayerPage(ctx, params) {
   }
 
   /**
-   * The tracks of the stream playing: Audio shows with two or more (the first time, the one in the language of the app is chosen, when
-   * the file has one and plays another), Subtitles of a live channel with one or more. Looked at again every TRACK_CHECK_MS for a while.
+   * The tracks of the stream playing: with two or more, the language of the app is chosen once when
+   * the file has it and plays another. Live subtitles show with one or more. Checked every TRACK_CHECK_MS for a while.
    */
-  function checkTracks() {
+  async function checkTracks() {
+    const token = loadToken;
     trackCheckAt = Date.now() + TRACK_CHECK_MS;
     try {
       const tracks = engine.getAudioTracks ? engine.getAudioTracks() : [];
-      setAudioVisible(tracks.length > 1);
+      if (isLive) setVisible('subtitles', Boolean(engine.getSubtitleTracks && engine.getSubtitleTracks().length));
       if (tracks.length > 1 && !audioPicked) {
         audioPicked = true;
         const pick = preferredAudioTrack(tracks, i18n.getLocale());
         if (pick !== null && engine.setAudioTrack) {
+          const applied = await engine.setAudioTrack(pick);
+          if (destroyed || token !== loadToken) return;
+          if (applied === false) return;
           audioTrack = pick;
-          engine.setAudioTrack(pick);
           log.info('Audio track in the language of the app', pick);
         }
       }
-      if (isLive) setVisible('subtitles', Boolean(engine.getSubtitleTracks && engine.getSubtitleTracks().length));
     } catch (err) {
       log.warn('Track check failed', err && err.message);
     }
   }
 
   async function openAudio() {
-    const tracks = engine.getAudioTracks ? engine.getAudioTracks() : [];
-    if (tracks.length < 2) {
+    const token = loadToken;
+    let tracks;
+    try {
+      tracks = engine.getAudioTracks ? engine.getAudioTracks() : [];
+    } catch {
+      tracks = [];
+    }
+    if (!tracks.length) {
       ctx.notices.warning(t('player.audio.none'), { scope: 'playback', key: 'track' });
       return;
     }
-    const now = tracks.find((track) => track.current) || tracks[0];
-    const options = tracks.map((track, i) => ({ label: subtitleLabel(track, i + 1, t('player.track')), value: track.index }));
-    const value = await ctx.dialogs.choose({ title: t('player.audio'), options, selected: audioTrack === null ? now.index : audioTrack });
-    if (value === null || destroyed) return;
-    audioTrack = value;
+    const now = tracks.find((track) => track.current) || tracks.find((track) => track.index === audioTrack) || tracks[0];
+    const options = tracks.map((track, i) => ({ label: subtitleLabel(track, i + 1, t('player.audio.track')), value: track.index }));
+    const value = await ctx.dialogs.choose({ title: t('player.audio'), options, selected: now.index });
+    if (value === null || destroyed || token !== loadToken) return;
     audioPicked = true;
     showControls();
     const chosen = options.find((o) => o.value === value);
-    ctx.notices.info(`${t('player.audio')}: ${chosen ? chosen.label : ''}`, { scope: 'playback', key: 'track' });
-    setTimeout(() => {
-      if (!destroyed && engine.setAudioTrack) engine.setAudioTrack(value);
-    }, 150);
+    // Let the dialog close before asking the native player to switch tracks.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    if (destroyed || token !== loadToken) return;
+    try {
+      if (!engine.setAudioTrack || (await engine.setAudioTrack(value)) === false) throw new Error('Audio selection failed');
+      if (destroyed || token !== loadToken) return;
+      audioTrack = value;
+      ctx.notices.info(`${t('player.audio')}: ${chosen ? chosen.label : ''}`, { scope: 'playback', key: 'track' });
+    } catch (err) {
+      if (destroyed || token !== loadToken) return;
+      log.warn('Audio selection failed', err && err.message);
+      ctx.notices.warning(t('player.audio.failed'), { scope: 'playback', key: 'track' });
+    }
   }
 
   function render(state) {
@@ -607,7 +622,6 @@ export function createPlayerPage(ctx, params) {
     audioTrack = null;
     audioPicked = false;
     trackCheckUntil = 0;
-    setAudioVisible(false);
     setVisible('goLive', false); // opened again: live
     titleEl.textContent = [title, current().title].filter(Boolean).join(' · ');
     nowEl.textContent = '';

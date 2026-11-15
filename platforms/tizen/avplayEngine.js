@@ -155,8 +155,10 @@ export function createAvPlayEngine() {
       try {
         av().setSelectTrack('AUDIO', index);
         log.info('AVPlay audio track selected', index);
+        return true;
       } catch (err) {
         log.warn('avplay audio selection failed', err && err.message);
+        return false;
       }
     },
     /**

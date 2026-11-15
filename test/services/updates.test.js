@@ -9,7 +9,7 @@ test('versions compare part by part', () => {
 });
 
 test('a newer build for this platform, with its absolute address; one that needs a newer package; nothing newer', () => {
-  expect(pickUpdate(manifest, { platform: 'tizen', running: '1.2.0', shell: '1.2.0' })).toEqual({ version: '1.3.0', base: 'https://andreadegiovine.github.io/xtream-iptv-client/bundles/1.3.0/tizen/' });
+  expect(pickUpdate(manifest, { platform: 'tizen', running: '1.2.0', shell: '1.2.0' })).toEqual({ version: '1.3.0', base: 'https://digitalgarve.github.io/xtream-iptv-client/bundles/1.3.0/tizen/' });
   expect(pickUpdate(manifest, { platform: 'tizen', running: '1.1.0', shell: '1.1.0' })).toEqual({ version: '1.3.0', needsPackage: true });
   expect(pickUpdate(manifest, { platform: 'tizen', running: '1.3.0', shell: '1.2.0' })).toBeNull();
   expect(pickUpdate(manifest, { platform: 'android', running: '1.0.0', shell: '1.0.0' })).toBeNull();
@@ -23,6 +23,7 @@ test('the check reads version.json without the cache and gives up when it does n
     return { ok: true, json: async () => manifest };
   };
   expect(await checkForUpdate({ platform: 'webos', running: '1.0.0', shell: '1.0.0', fetchImpl })).toMatchObject({ version: '1.3.0' });
+  expect(UPDATE_URL).toBe('https://digitalgarve.github.io/xtream-iptv-client/version.json');
   expect(urls).toEqual([[UPDATE_URL, 'no-store']]);
   const never = () => new Promise(() => undefined);
   expect(await checkForUpdate({ platform: 'webos', running: '1.0.0', shell: '1.0.0', fetchImpl: never, timeoutMs: 20 })).toBeNull();

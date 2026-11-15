@@ -158,13 +158,17 @@ To try a release without publishing a real one, create a pre-release with a tag 
 
 ## Online updates
 
+This fork uses the `digitalgarve/xtream-iptv-client` update channel. Before publishing the first release, create the `gh-pages` branch and enable GitHub Pages for its root; the release workflow checks out that existing branch. A code push or merged PR alone does not publish an update.
+
+To move a TV from the upstream channel, install a new `_autoupdate` package built from this fork once. Its version must be at least as high as the installed package and any cached update: the loader keeps using a cached bundle when it is newer than the package. Subsequent compatible releases use this fork's channel.
+
 Installed apps update their web code (JavaScript, styles, fonts) by themselves, without the store or the system (`src/services/updates.js`):
 
 - Only the `_autoupdate` packages of Tizen and webOS check for updates; each follows its own channel (`tizen`, `tizen_youtube`, `webos`),
   so a package receives builds of its own variant. Store packages never load code from outside (the loader ignores any stored build).
 - The release workflow's `pages` job builds those channels (with `--env autoupdate`) and writes `bundles/<version>/<channel>/` and
   `version.json` on the `gh-pages` branch (`scripts/publish-updates.js`, last three versions kept). GitHub Pages must serve that branch (Settings → Pages → Deploy from a
-  branch → `gh-pages`, `/ (root)`); the app reads `https://andreadegiovine.github.io/xtream-iptv-client/version.json`.
+  branch → `gh-pages`, `/ (root)`); the app reads `https://digitalgarve.github.io/xtream-iptv-client/version.json`.
 - At start-up the check is the first thing the app does (5 s at most): a newer build that the installed package can run is downloaded
   ("Updating to version X…" in a notice over the start screen), the app starts again with it and only then runs its usual start-up work. The loader in
   `src/index.html` picks the newer of the package's own copy and the installed build at every start, and falls back to the package's copy when

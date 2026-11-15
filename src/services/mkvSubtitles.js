@@ -158,9 +158,9 @@ async function readElement(reader, pos, guess = 4096) {
 /**
  * The text subtitle tracks of an MKV with their cue entries, or null when the file is not an MKV, the server does not serve ranges, or no
  * text track has cue entries. `{ tracks: [{ number, codec, language, name, default, forced, cues: [{ time, cluster, relative, duration }] }],
- * segmentStart, scaleMs }` (times in ms; positions absolute in the file).
+ * segmentStart, scaleMs }` (times in ms; positions absolute in the file). audioOnly returns audio metadata without reading cues.
  */
-export async function probeMkv(reader, report = () => undefined) {
+export async function probeMkv(reader, report = () => undefined, { audioOnly = false } = {}) {
   const head = await reader.read(0, HEAD_BYTES - 1);
   const top = elements(head, 0, head.byteLength);
   if (!top.length || top[0].id !== ID.EBML) {
@@ -217,6 +217,7 @@ export async function probeMkv(reader, report = () => undefined) {
         cues: [],
       };
     });
+  if (audioOnly) return { tracks: all.filter((track) => track.type === 2).map((track) => ({ language: track.language, label: track.name })) };
   const tracks = all.filter((track) => track.type === SUBTITLE_TYPE && TEXT_CODECS.indexOf(track.codec) >= 0);
   if (!tracks.length) {
     const codecs = all.filter((track) => track.type === SUBTITLE_TYPE).map((track) => track.codec);

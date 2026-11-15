@@ -124,7 +124,7 @@ export function createHtml5Engine({ demux = isDev() } = {}) {
     },
     getAudioTracks() {
       const list = video && video.audioTracks ? Array.from(video.audioTracks) : [];
-      return list.map((track, index) => ({ index, language: track.language || '', current: Boolean(track.enabled) }));
+      return list.map((track, index) => ({ index, language: track.language || '', label: track.label || '', current: Boolean(track.enabled) }));
     },
     setAudioTrack(index) {
       if (!video || !video.audioTracks) return;

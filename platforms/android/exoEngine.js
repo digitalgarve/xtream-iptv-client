@@ -67,7 +67,7 @@ export function createExoEngine(env = typeof window !== 'undefined' ? window : {
       return true;
     },
     getSubtitleTracks: () => tracks.text.map((track) => ({ index: track.index, language: track.language || '' })),
-    getAudioTracks: () => tracks.audio.map((track) => ({ index: track.index, language: track.language || '', current: Boolean(track.current) })),
+    getAudioTracks: () => tracks.audio.map((track) => ({ index: track.index, language: track.language || '', label: track.label || '', current: Boolean(track.current) })),
     setAudioTrack: (index) => call('selectAudio', { index }),
     /** index = track to show (drawn by ExoPlayer), null = subtitles off. */
     setSubtitleTrack: (index) => call('selectText', { index: index === null ? -1 : index }),

@@ -138,9 +138,9 @@ function sampleEntries(view, stbl, timescale) {
 
 /**
  * The text subtitle tracks of an MP4: `{ tracks: [{ number, codec, language, name, forced, cues, readEntry }] }`, or null (not an MP4, no text
- * track, no ranges). `readEntry(reader, entry)` reads one line.
+ * track, no ranges). `readEntry(reader, entry)` reads one line. audioOnly returns audio metadata without reading sample tables.
  */
-export async function probeMp4(reader, report = () => undefined) {
+export async function probeMp4(reader, report = () => undefined, { audioOnly = false } = {}) {
   const moovAt = await locateMoov(reader, report);
   if (!moovAt) return null;
   const view = await reader.read(moovAt.pos, moovAt.pos + moovAt.size - 1);
@@ -157,6 +157,15 @@ export async function probeMp4(reader, report = () => undefined) {
       const mdia = find(view, trak, 'mdia');
       const hdlr = mdia && find(view, mdia, 'hdlr');
       const handler = hdlr ? type(view, hdlr.start + 8) : '';
+      if (audioOnly) {
+        if (handler !== 'soun') return;
+        const mdhd = find(view, mdia, 'mdhd');
+        const version = mdhd ? view.getUint8(mdhd.start) : 0;
+        const language = mdhd ? packedLanguage(view.getUint16(mdhd.start + (version === 1 ? 32 : 20))) : '';
+        const name = utf8(new Uint8Array(view.buffer, view.byteOffset + hdlr.start + 24, Math.max(0, hdlr.end - hdlr.start - 24))).split('\u0000')[0];
+        found.push({ language, label: name });
+        return;
+      }
       if (['sbtl', 'text', 'subt'].indexOf(handler) < 0) return;
       const stsd = path(view, mdia, ['minf', 'stbl', 'stsd']);
       const entry = stsd && boxes(view, stsd.start + 8, stsd.end)[0];
@@ -187,7 +196,7 @@ export async function probeMp4(reader, report = () => undefined) {
         },
       });
     });
-  if (!found.length) {
+  if (!found.length && !audioOnly) {
     report(formats.length ? `no text subtitles (${formats.join(', ')})` : 'no subtitle tracks');
     return null;
   }

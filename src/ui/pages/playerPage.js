@@ -6,7 +6,7 @@ import { t, i18n } from '../../i18n/index.js';
 import { Action } from '../../core/input.js';
 import { log } from '../../core/logger.js';
 import { platform } from '../../platform/index.js';
-import { createPlayerController, formatClock, neighborEpisode, subtitleLabel, nextAspect, scrubTarget, positionFromPointer, preferredAudioTrack } from '../../services/playerController.js';
+import { createPlayerController, formatClock, neighborEpisode, audioLabel, audioLanguage, nextAspect, scrubTarget, positionFromPointer, preferredAudioTrack } from '../../services/playerController.js';
 import { ASPECT_MODES } from '../../services/playerEngines.js';
 import { youtubeStreamUrl } from '../../services/trailer.js';
 import { formatClockTime } from '../../core/clock.js';
@@ -469,7 +469,7 @@ export function createPlayerPage(ctx, params) {
       if (isLive) setVisible('subtitles', Boolean(engine.getSubtitleTracks && engine.getSubtitleTracks().length));
       if (tracks.length > 1 && !audioPicked) {
         audioPicked = true;
-        const pick = preferredAudioTrack(tracks, i18n.getLocale());
+        const pick = preferredAudioTrack(params.audioLanguage ? tracks.map((track) => ({ ...track, language: audioLanguage(track) })) : tracks, params.audioLanguage || i18n.getLocale());
         if (pick !== null && engine.setAudioTrack) {
           const applied = await engine.setAudioTrack(pick);
           if (destroyed || token !== loadToken) return;
@@ -496,7 +496,7 @@ export function createPlayerPage(ctx, params) {
       return;
     }
     const now = tracks.find((track) => track.current) || tracks.find((track) => track.index === audioTrack) || tracks[0];
-    const options = tracks.map((track, i) => ({ label: subtitleLabel(track, i + 1, t('player.audio.track')), value: track.index }));
+    const options = tracks.map((track, i) => ({ label: audioLabel(track, i + 1, t('player.audio.track')), value: track.index }));
     const value = await ctx.dialogs.choose({ title: t('player.audio'), options, selected: now.index });
     if (value === null || destroyed || token !== loadToken) return;
     audioPicked = true;

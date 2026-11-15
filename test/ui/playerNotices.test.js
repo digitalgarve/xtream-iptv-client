@@ -6,7 +6,7 @@ const flush = async () => {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 };
 
-function setup({ autoplayNext = true, duration = 3000 } = {}) {
+function setup({ autoplayNext = true, duration = 3000, audioLanguage = '' } = {}) {
   const clock = { time: 0, duration };
   let handlers = null;
   const engine = {
@@ -33,6 +33,7 @@ function setup({ autoplayNext = true, duration = 3000 } = {}) {
   };
   const page = createPlayerPage(ctx, {
     type: 'series',
+    audioLanguage,
     entryKey: 'series:1',
     title: 'S',
     playlist: [
@@ -49,6 +50,18 @@ describe('player notices', () => {
   afterEach(() => {
     jest.useRealTimers();
     document.body.innerHTML = '';
+  });
+
+  test('the audio language chosen on the detail page overrides the app language', async () => {
+    const { page, engine, handlers } = setup({ audioLanguage: 'de' });
+    engine.getAudioTracks = () => [{ index: 3, language: 'eng', current: true }, { index: 7, label: 'German AC3' }];
+    engine.setAudioTrack = jest.fn();
+    page.mount();
+    await flush();
+    handlers().onPrepared();
+    await flush();
+    expect(engine.setAudioTrack).toHaveBeenCalledWith(7);
+    page.destroy();
   });
 
   test('retries are notices, the video area only says "paused"', async () => {

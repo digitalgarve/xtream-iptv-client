@@ -77,12 +77,12 @@ Every platform has a script that turns `dist/` into the release package. They ar
 To build a signed TV package on GitHub without publishing a release:
 
 1. Add the repository Actions secret `TIZEN_CERT_PASSWORD` under **Settings → Secrets and variables → Actions**.
-   It must be the password of the existing `platforms/tizen/tizencert.p12` certificate.
+   It must be the shared password of your Samsung `author.p12` and `distributor.p12`. Add their base64-encoded contents as `TIZEN_AUTHOR_CERT_BASE64` and `TIZEN_DISTRIBUTOR_CERT_BASE64`. Keep all three files outside Git.
 2. Push `.github/workflows/tizen.yml` to the default branch, then open **Actions → Build Tizen TV → Run workflow** and choose the branch to build.
 3. Download the **tizen-tv** artifact from the completed run and unzip it. It contains `xtream-iptv-<version>_tizen.wgt` and its SHA-256 checksum.
 
 The workflow uses the version in `package.json`, runs lint and tests, and builds the standard package (no in-app trailer service or automatic updates).
-Installing on a Samsung TV may require re-signing with your own Samsung certificate profile; see the [installation guide](../platforms/tizen/README.md).
+The distributor certificate must include the target TV; see the [installation guide](../platforms/tizen/README.md).
 
 For a local build on Linux:
 
@@ -91,8 +91,8 @@ npm run build:tizen
 CERT_PASSWORD=<password> bash platforms/tizen/package.sh 1.0.0
 ```
 
-The script installs the Tizen Studio CLI, registers a signing profile with `platforms/tizen/tizencert.p12` (copied to a temporary folder) and signs the `.wgt`.
-The certificate is versioned; its password is the `TIZEN_CERT_PASSWORD` secret.
+The script installs the Tizen Studio CLI, registers a signing profile with the Samsung author and distributor certificates (decoded into a temporary folder) and signs the `.wgt`.
+Pass the base64 certificates through `CERT_AUTHOR_BASE64` and `CERT_DISTRIBUTOR_BASE64`, and their shared password through `CERT_PASSWORD`. The workflows obtain these from the three repository Actions secrets; private certificates are never committed.
 
 To sign with your own Samsung certificate profile and install without the script:
 
@@ -160,7 +160,9 @@ Every file also has a `.sha256`.
 
 | Secret | Used by | For |
 |---|---|---|
-| `TIZEN_CERT_PASSWORD` | `tizen` | password of `platforms/tizen/tizencert.p12` |
+| `TIZEN_CERT_PASSWORD` | `tizen` | shared password of the Samsung author and distributor certificates |
+| `TIZEN_AUTHOR_CERT_BASE64` | `tizen` | base64-encoded Samsung `author.p12` |
+| `TIZEN_DISTRIBUTOR_CERT_BASE64` | `tizen` | base64-encoded Samsung `distributor.p12` (includes the target TV) |
 | `ANDROID_KEYSTORE_PASSWORD` | `android` | password of `platforms/android/release.keystore` (without it, a debug key is used) |
 | `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | `android` | optional: key alias (default `xtream`) and key password (default: the keystore one) |
 

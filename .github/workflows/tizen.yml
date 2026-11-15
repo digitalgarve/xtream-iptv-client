@@ -17,12 +17,18 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Check signing secret
+      - name: Check signing secrets
         env:
           CERT_PASSWORD: ${{ secrets.TIZEN_CERT_PASSWORD }}
+          CERT_AUTHOR_BASE64: ${{ secrets.TIZEN_AUTHOR_CERT_BASE64 }}
+          CERT_DISTRIBUTOR_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_CERT_BASE64 }}
         run: |
           if [ -z "$CERT_PASSWORD" ]; then
-            echo "::error::Set the repository Actions secret TIZEN_CERT_PASSWORD to the password of platforms/tizen/tizencert.p12."
+            echo "::error::Set the repository Actions secret TIZEN_CERT_PASSWORD to the shared password of the Samsung author and distributor certificates."
+            exit 1
+          fi
+          if [ -z "$CERT_AUTHOR_BASE64" ] || [ -z "$CERT_DISTRIBUTOR_BASE64" ]; then
+            echo "::error::Set TIZEN_AUTHOR_CERT_BASE64 and TIZEN_DISTRIBUTOR_CERT_BASE64."
             exit 1
           fi
 
@@ -34,6 +40,8 @@ jobs:
       - name: Sign the widget
         env:
           CERT_PASSWORD: ${{ secrets.TIZEN_CERT_PASSWORD }}
+          CERT_AUTHOR_BASE64: ${{ secrets.TIZEN_AUTHOR_CERT_BASE64 }}
+          CERT_DISTRIBUTOR_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_CERT_BASE64 }}
         run: |
           VERSION="$(node -p "require('./package.json').version")"
           bash platforms/tizen/package.sh "$VERSION" release

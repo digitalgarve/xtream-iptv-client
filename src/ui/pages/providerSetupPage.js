@@ -101,7 +101,7 @@ export function createProviderSetup(ctx, { editId = null, firstRun = false, zone
     if (!values.name || !values.username || !values.password) throw new AppError(ErrorCode.INVALID_INPUT);
     const baseUrl = normalizeBaseUrl(values.url);
     const auth = await new XtreamClient({ baseUrl, username: values.username, password: values.password }).authenticate();
-    return { name: values.name, baseUrl, username: values.username, password: values.password, expiresAt: auth.user.expiresAt || null };
+    return { name: values.name, baseUrl, username: values.username, password: values.password, expiresAt: auth.user.expiresAt || null, allowedFormats: auth.user.allowedFormats };
   }
 
   async function save() {

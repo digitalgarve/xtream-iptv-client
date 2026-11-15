@@ -442,7 +442,7 @@ export async function runSyncForProvider({ provider, types, excluded, cleanTitle
     const client = makeClient ? makeClient(provider) : createProviderClient(provider);
     emit({ event: 'progress', mediaType: null, phase: 'auth' });
     const auth = await client.authenticate();
-    emit({ event: 'account', expiresAt: (auth && auth.user && auth.user.expiresAt) || null });
+    emit({ event: 'account', expiresAt: (auth && auth.user && auth.user.expiresAt) || null, allowedFormats: (auth && auth.user && auth.user.allowedFormats) || [] });
     db = await openDb(provider.id);
     results = await runSync({ db, client, types, excluded, cleanTitles, grouping, force, rewrite, rebuildTypes, signal, emit, gate, search });
   } catch (err) {

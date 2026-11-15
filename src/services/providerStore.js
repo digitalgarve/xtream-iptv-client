@@ -44,7 +44,7 @@ export class ProviderStore {
   }
 
   /** An Xtream account ({ name, baseUrl, username, password }) or an M3U playlist ({ type: 'm3u', name, playlistUrl, epgUrl? }). */
-  async add({ type = 'xtream', name, baseUrl, username, password, playlistUrl, epgUrl = '', expiresAt = null }) {
+  async add({ type = 'xtream', name, baseUrl, username, password, playlistUrl, epgUrl = '', expiresAt = null, allowedFormats = [] }) {
     const m3u = type === 'm3u';
     if (!name || (m3u ? !playlistUrl : !baseUrl || !username || !password)) {
       throw new AppError(ErrorCode.INVALID_INPUT, 'Missing provider fields');
@@ -52,7 +52,7 @@ export class ProviderStore {
     const slot = (await this.list()).reduce((max, p) => Math.max(max, p.slot || 0), 0) + 1;
     const provider = m3u
       ? { id: generateId(), type: 'm3u', name, playlistUrl, epgUrl: epgUrl || '', baseUrl: playlistUrl, username: '', password: '', createdAt: nextCreatedAt(), slot }
-      : { id: generateId(), name, baseUrl, username, password, ...(expiresAt ? { expiresAt } : {}), createdAt: nextCreatedAt(), slot };
+      : { id: generateId(), name, baseUrl, username, password, allowedFormats, ...(expiresAt ? { expiresAt } : {}), createdAt: nextCreatedAt(), slot };
     await dbPut(this.db, 'providers', provider);
     return provider;
   }

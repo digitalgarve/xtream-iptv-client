@@ -10,7 +10,7 @@ export const providerType = (provider) => (provider && provider.type === Provide
 /** The client of a provider (same methods for both types). */
 export function createProviderClient(provider) {
   if (providerType(provider) === ProviderType.M3U) return new M3uClient({ playlistUrl: provider.playlistUrl, epgUrl: provider.epgUrl || '' });
-  return new XtreamClient({ baseUrl: provider.baseUrl, username: provider.username, password: provider.password });
+  return new XtreamClient({ baseUrl: provider.baseUrl, username: provider.username, password: provider.password, liveFormat: provider.liveFormat, allowedFormats: provider.allowedFormats });
 }
 
 /** Top bar sections a provider type has nothing for: a playlist has no series (no seasons or episodes in M3U). */

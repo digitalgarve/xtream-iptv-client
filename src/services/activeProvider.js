@@ -4,14 +4,14 @@ import { createUnionClient } from './unionClient.js';
 
 /**
  * Shared handle on the active provider: its database (opened once, kept open) and an API client that
- * authenticates lazily (needed for the live stream format). Pages never close the shared database;
+ * uses the saved live format and account information. Pages never close the shared database;
  * call `release()` before a provider is deleted so the delete is not blocked.
  */
 export function createActiveProvider({ providers, openDb = openProviderDb, makeClient = createProviderClient }) {
   let cache = null;
   let pending = null;
 
-  const same = (a, b) => a.id === b.id && a.baseUrl === b.baseUrl && a.username === b.username && a.password === b.password && a.playlistUrl === b.playlistUrl && a.epgUrl === b.epgUrl;
+  const same = (a, b) => a.id === b.id && a.baseUrl === b.baseUrl && a.username === b.username && a.password === b.password && a.playlistUrl === b.playlistUrl && a.epgUrl === b.epgUrl && a.liveFormat === b.liveFormat && JSON.stringify(a.allowedFormats) === JSON.stringify(b.allowedFormats);
 
   function release() {
     if (cache) {
@@ -42,7 +42,7 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
     const others = active.slice(1).map((p) => ({ slot: p.slot, provider: p, client: makeClient(p) }));
     const client = others.length ? createUnionClient(mainClient, others) : mainClient;
     // `sources`: who the titles of the catalog come from (slot 0: the main provider).
-    cache = { provider, db, client, auth: null, active, sources: [{ slot: 0, provider }].concat(others.map((o) => ({ slot: o.slot, provider: o.provider }))) };
+    cache = { provider, db, client, active, sources: [{ slot: 0, provider }].concat(others.map((o) => ({ slot: o.slot, provider: o.provider }))) };
     // A playlist client gives stream addresses once it has read the playlist (the player asks for them without waiting).
     if (cache.client.prepare) await cache.client.prepare().catch(() => undefined);
     return cache;
@@ -53,19 +53,6 @@ export function createActiveProvider({ providers, openDb = openProviderDb, makeC
     get() {
       if (!pending) pending = load().finally(() => { pending = null; });
       return pending;
-    },
-    /** Client that has authenticated at least once (allowed live formats are known). */
-    async authenticatedClient() {
-      const current = await this.get();
-      if (!current) return null;
-      if (!current.auth) {
-        current.auth = current.client.authenticate().catch((err) => {
-          current.auth = null;
-          throw err;
-        });
-      }
-      await current.auth;
-      return current.client;
     },
     release,
   };

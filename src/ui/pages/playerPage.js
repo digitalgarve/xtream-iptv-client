@@ -5,6 +5,7 @@ import { setTip } from '../tooltip.js';
 import { t, i18n } from '../../i18n/index.js';
 import { Action } from '../../core/input.js';
 import { log } from '../../core/logger.js';
+import { ErrorCode, toAppError } from '../../core/errors.js';
 import { platform } from '../../platform/index.js';
 import { createPlayerController, formatClock, neighborEpisode, audioLabel, audioLanguage, nextAspect, scrubTarget, positionFromPointer, preferredAudioTrack } from '../../services/playerController.js';
 import { ASPECT_MODES } from '../../services/playerEngines.js';
@@ -661,9 +662,9 @@ export function createPlayerPage(ctx, params) {
       return;
     }
     try {
-      const client = isLive ? await ctx.active.authenticatedClient() : (await ctx.active.get()).client;
+      const { client, provider } = await ctx.active.get();
       let startAt = 0;
-      providerId = (await ctx.active.get()).provider.id;
+      providerId = provider.id;
       if (!isLive) {
         const record = await ctx.watch.get(watchKey(providerId, params.entryKey, episodeKey()));
         if (record && !params.restart && shouldResume(record.position, record.duration)) startAt = record.position;
@@ -677,7 +678,9 @@ export function createPlayerPage(ctx, params) {
       if (isLive) loadProgramme(token);
     } catch (err) {
       log.warn('Player start failed', err && err.message);
-      showPlayerError(t('error.PLAYER'));
+      if (destroyed || token !== loadToken) return;
+      const error = toAppError(err);
+      showPlayerError(t(error.code === ErrorCode.UNKNOWN ? 'error.PLAYER' : error.i18nKey));
     }
   }
 

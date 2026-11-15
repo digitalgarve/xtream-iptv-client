@@ -4,6 +4,7 @@ import { Action } from '../../src/core/input.js';
 import { openProviderDb } from '../../src/db/providerDb.js';
 import { dbPutMany } from '../../src/core/idb.js';
 import { LIVE_ALL } from '../../src/services/catalogQuery.js';
+import { t } from '../../src/i18n/index.js';
 
 const wait = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
 let counter = 0;
@@ -29,7 +30,7 @@ async function setup() {
     notices: createNoticeService({ root: document.body }),
     catalog: { pause() {}, resume() {} },
     settings: { get: async () => ({ bufferSeconds: 5, timeFormat: '24h' }) },
-    active: { get: async () => ({ provider: { id: 'p' }, client, db }), authenticatedClient: async () => client },
+    active: { get: async () => ({ provider: { id: 'p' }, client, db }), authenticatedClient: jest.fn(() => new Promise(() => {})) },
     epg: { maybeSync: async () => null, nowNext: async (id) => (id === 'c1' ? { now: { title: 'News', start: now - 60000, stop: now + 3600000 }, next: null } : { now: null, next: null }) },
     dialogs: { isOpen: () => false, choose: jest.fn() },
     router: { back: jest.fn() },
@@ -46,6 +47,15 @@ const focusedTip = (page) => (page.el.querySelector('.player-btn.focused') || { 
 
 afterEach(() => {
   document.body.innerHTML = '';
+});
+
+test('live starts without waiting for an account lookup', async () => {
+  const { page, ctx, engine } = await setup();
+  try {
+    expect(ctx.active.authenticatedClient).not.toHaveBeenCalled();
+    expect(engine.start).toHaveBeenCalledWith('http://h/live/1', expect.any(Object));
+    expect(document.body.textContent).not.toContain(t('error.PLAYER'));
+  } finally { page.destroy(); }
 });
 
 test('live: end of the programme after LIVE; network, previous and next before it; next goes over "show all" with networks opened up', async () => {

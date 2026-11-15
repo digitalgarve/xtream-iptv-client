@@ -42,7 +42,9 @@ printf '%s' "$CERT_AUTHOR_BASE64" | base64 --decode > "$CERT"
 printf '%s' "$CERT_DISTRIBUTOR_BASE64" | base64 --decode > "$DISTRIBUTOR_CERT"
 export CERT_PASSWORD
 for certificate in "$CERT" "$DISTRIBUTOR_CERT"; do
-  if ! openssl pkcs12 -in "$certificate" -passin env:CERT_PASSWORD -noout; then
+  # OpenSSL 3+ needs the legacy provider to read older RC2-encrypted PKCS#12 files.
+  if ! openssl pkcs12 -in "$certificate" -passin env:CERT_PASSWORD -noout 2>/dev/null &&
+     ! openssl pkcs12 -legacy -in "$certificate" -passin env:CERT_PASSWORD -noout; then
     echo "::error::Samsung certificate cannot be opened with TIZEN_CERT_PASSWORD: $(basename "$certificate")"
     exit 1
   fi
@@ -60,16 +62,10 @@ if [ ! -x "$TIZEN" ]; then
   rm "${TMP}/tizen-installer"
 fi
 
-# Signing profile
-# Run once per variant (release workflow): the profile is added the first time only, remembered by a marker file. (Do not test the
-# output of `security-profiles list`: it prints paths, and a path with "xtream" in it made the check pass without a profile, so the
-# 1.4.0 widgets were packaged unsigned.)
-PROFILE_MARK="${DATA}/.profile-${TIZEN_PROFILE}-added"
-if [ ! -f "$PROFILE_MARK" ]; then
-  "$TIZEN" security-profiles add -n "$TIZEN_PROFILE" -a "$CERT" -p "$CERT_PASSWORD" -d "$DISTRIBUTOR_CERT" -dp "$CERT_PASSWORD"
-  mkdir -p "$DATA"
-  touch "$PROFILE_MARK"
-fi
+# Refresh on every invocation: cached profiles may reference old certificates or temporary paths.
+# Removal may fail on the first run because the profile does not exist yet; adding must succeed.
+"$TIZEN" security-profiles remove -n "$TIZEN_PROFILE" >/dev/null 2>&1 || true
+"$TIZEN" security-profiles add -n "$TIZEN_PROFILE" -a "$CERT" -p "$CERT_PASSWORD" -d "$DISTRIBUTOR_CERT" -dp "$CERT_PASSWORD"
 "$TIZEN" cli-config "profiles.path=${PROFILES}"
 chmod 600 "$PROFILES"
 

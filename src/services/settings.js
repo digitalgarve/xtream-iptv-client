@@ -8,7 +8,7 @@ export const BUFFER_OPTIONS = [2, 5, 10, 20, 30];
 export const GRID_OPTIONS = [12, 24, 36];
 // Screensaver: minutes without a key before it starts; 0 = off.
 export const SCREENSAVER_OPTIONS = [0, 1, 5, 15];
-export const LANGUAGE_OPTIONS = ['auto', 'en-US', 'it-IT'];
+export const LANGUAGE_OPTIONS = ['auto', 'en-US', 'it-IT', 'de-DE'];
 export const SUGGESTION_SOURCE_OPTIONS = ['tmdb', 'trakt'];
 
 export const DEFAULT_SETTINGS = Object.freeze({

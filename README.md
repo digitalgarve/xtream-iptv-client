@@ -59,7 +59,7 @@ still being tested on real devices.
 - **Several providers**, each with its own database; favorites, collections and pins follow you between them.
 - **Parental control**: a PIN set on the first start hides adult categories.
 - **Private by design**: no account, no analytics; keys stay on the device and credentials are masked in the logs.
-- **English and Italian**, following the device language or chosen manually.
+- **English, Italian and German**, following the device language or chosen manually.
 
 ## Compared with popular players
 

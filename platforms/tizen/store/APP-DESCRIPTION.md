@@ -12,7 +12,7 @@ other fields of the submission.
 | Version | the version of the uploaded `_tizen.wgt` |
 | Category | Video |
 | Type | Web application (Tizen 6.0+), no in-app purchases, no ads, no login to a service of ours |
-| Languages | English, Italian (follows the TV language, can be changed in Settings) |
+| Languages | English, Italian, German (follows the TV language, can be changed in Settings) |
 | Resolution | 1920x1080 |
 
 **Purpose.** Xtream IPTV is a player for the IPTV service the user already subscribes to. The user adds a provider (Xtream Codes

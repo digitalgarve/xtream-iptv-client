@@ -63,6 +63,7 @@ export function createPlayerPage(ctx, params) {
   const TRACK_CHECK_FOR_MS = 60000;
   let trackCheckAt = 0;
   let trackCheckUntil = 0;
+  let audioTrack = null; // fallback when the player cannot report the current track
   let audioPicked = false; // the audio of this stream was chosen (by the user, or the language of the app once)
   let focusMode = false; // the D-pad moves over the controls (progress pointer + buttons) instead of seeking
   let barFocus = false; // focus on the progress pointer (otherwise on a button)
@@ -460,19 +461,23 @@ export function createPlayerPage(ctx, params) {
    * The tracks of the stream playing: with two or more, the language of the app is chosen once when
    * the file has it and plays another. Live subtitles show with one or more. Checked every TRACK_CHECK_MS for a while.
    */
-  function checkTracks() {
+  async function checkTracks() {
+    const token = loadToken;
     trackCheckAt = Date.now() + TRACK_CHECK_MS;
     try {
       const tracks = engine.getAudioTracks ? engine.getAudioTracks() : [];
+      if (isLive) setVisible('subtitles', Boolean(engine.getSubtitleTracks && engine.getSubtitleTracks().length));
       if (tracks.length > 1 && !audioPicked) {
         audioPicked = true;
         const pick = preferredAudioTrack(tracks, i18n.getLocale());
         if (pick !== null && engine.setAudioTrack) {
-          engine.setAudioTrack(pick);
+          const applied = await engine.setAudioTrack(pick);
+          if (destroyed || token !== loadToken) return;
+          if (applied === false) return;
+          audioTrack = pick;
           log.info('Audio track in the language of the app', pick);
         }
       }
-      if (isLive) setVisible('subtitles', Boolean(engine.getSubtitleTracks && engine.getSubtitleTracks().length));
     } catch (err) {
       log.warn('Track check failed', err && err.message);
     }
@@ -490,7 +495,7 @@ export function createPlayerPage(ctx, params) {
       ctx.notices.warning(t('player.audio.none'), { scope: 'playback', key: 'track' });
       return;
     }
-    const now = tracks.find((track) => track.current) || tracks[0];
+    const now = tracks.find((track) => track.current) || tracks.find((track) => track.index === audioTrack) || tracks[0];
     const options = tracks.map((track, i) => ({ label: subtitleLabel(track, i + 1, t('player.audio.track')), value: track.index }));
     const value = await ctx.dialogs.choose({ title: t('player.audio'), options, selected: now.index });
     if (value === null || destroyed || token !== loadToken) return;
@@ -502,8 +507,11 @@ export function createPlayerPage(ctx, params) {
     if (destroyed || token !== loadToken) return;
     try {
       if (!engine.setAudioTrack || (await engine.setAudioTrack(value)) === false) throw new Error('Audio selection failed');
+      if (destroyed || token !== loadToken) return;
+      audioTrack = value;
       ctx.notices.info(`${t('player.audio')}: ${chosen ? chosen.label : ''}`, { scope: 'playback', key: 'track' });
     } catch (err) {
+      if (destroyed || token !== loadToken) return;
       log.warn('Audio selection failed', err && err.message);
       ctx.notices.warning(t('player.audio.failed'), { scope: 'playback', key: 'track' });
     }
@@ -611,6 +619,7 @@ export function createPlayerPage(ctx, params) {
     closeNextNotice();
     nextOffered = false;
     subtitles.reset();
+    audioTrack = null;
     audioPicked = false;
     trackCheckUntil = 0;
     setVisible('goLive', false); // opened again: live

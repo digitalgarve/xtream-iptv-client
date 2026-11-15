@@ -175,6 +175,7 @@ test('audio listed late: looked at again after the start; the language of the ap
 });
 
 function openAudioWithRemote(page) {
+  page.onBack();
   page.onAction(Action.ENTER);
   for (let i = 0; i < 20; i += 1) {
     const focused = page.el.querySelector('.player-btn.focused');
@@ -226,5 +227,98 @@ test.each(['false', 'reject'])('failed audio switch (%s) never reports success',
     expect(engine.setAudioTrack).toHaveBeenCalledWith(2);
     expect(warning).toHaveBeenCalledWith('Could not switch audio track', expect.any(Object));
     expect(info).not.toHaveBeenCalled();
+  } finally { page.destroy(); }
+});
+
+
+test('audio without current metadata remembers success, prefers player metadata, and resets on a new stream', async () => {
+  const { page, engine, ctx } = await setup();
+  let tracks = [{ index: 0, current: false }, { index: 2, current: false }];
+  engine.getAudioTracks = () => tracks;
+  engine.setAudioTrack = jest.fn(() => true);
+  ctx.dialogs.choose.mockResolvedValue(null).mockResolvedValueOnce(2);
+  try {
+    openAudioWithRemote(page);
+    await wait(220);
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 2 }));
+    tracks[0].current = true;
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 0 }));
+    tracks[0].current = false;
+    tracks = [tracks[0]];
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 0 }));
+    tracks.push({ index: 2, current: false });
+    page.onAction(Action.CHANNEL_UP);
+    await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/3', expect.any(Object));
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 0 }));
+  } finally { page.destroy(); }
+});
+
+test.each(['false', 'reject'])('failed audio switch (%s) preserves the last successful fallback', async (mode) => {
+  const { page, engine, ctx } = await setup();
+  engine.getAudioTracks = () => [{ index: 0 }, { index: 2 }, { index: 3 }];
+  engine.setAudioTrack = jest.fn().mockReturnValueOnce(true);
+  ctx.dialogs.choose.mockResolvedValue(null).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
+  try {
+    openAudioWithRemote(page);
+    await wait(220);
+    if (mode === 'false') engine.setAudioTrack.mockReturnValueOnce(false);
+    else engine.setAudioTrack.mockRejectedValueOnce(new Error('refused'));
+    openAudioWithRemote(page);
+    await wait(220);
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 2 }));
+  } finally { page.destroy(); }
+});
+
+test.each(['success', 'false', 'reject'])('automatic audio selection (%s) only remembers an applied track', async (mode) => {
+  const { page, engine, ctx } = await setup();
+  engine.getAudioTracks = () => [{ index: 0, language: 'ita' }, { index: 2, language: 'eng' }];
+  engine.setAudioTrack = mode === 'reject' ? jest.fn().mockRejectedValue(new Error('refused')) : jest.fn().mockResolvedValue(mode !== 'false');
+  ctx.dialogs.choose.mockResolvedValue(null);
+  try {
+    engine.handlers.onPrepared();
+    engine.handlers.onBufferingDone();
+    await wait();
+    expect(engine.setAudioTrack).toHaveBeenCalledWith(2);
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: mode === 'success' ? 2 : 0 }));
+  } finally { page.destroy(); }
+});
+
+test.each(['manual', 'automatic'])('a delayed %s audio switch cannot set the fallback for a new stream', async (mode) => {
+  const { page, engine, ctx } = await setup();
+  engine.getAudioTracks = () => [{ index: 0, language: 'ita' }, { index: 2, language: 'eng' }];
+  let finish;
+  engine.setAudioTrack = jest.fn(() => new Promise((resolve) => { finish = resolve; }));
+  ctx.dialogs.choose.mockResolvedValue(null);
+  try {
+    if (mode === 'manual') {
+      ctx.dialogs.choose.mockResolvedValueOnce(2);
+      openAudioWithRemote(page);
+      await wait(220);
+    } else {
+      engine.handlers.onPrepared();
+      engine.handlers.onBufferingDone();
+      await wait();
+    }
+    expect(engine.setAudioTrack).toHaveBeenCalledWith(2);
+    page.onAction(Action.CHANNEL_UP);
+    await wait();
+    finish(true);
+    await wait();
+    openAudioWithRemote(page);
+    await wait();
+    expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 0 }));
   } finally { page.destroy(); }
 });

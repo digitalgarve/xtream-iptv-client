@@ -95,3 +95,37 @@ test('engines without viewport support fall back to the existing entry flow', as
   expect(ctx.openEntry).toHaveBeenCalledWith(channel(1), { section: 'live' });
   expect(preview.activate(channel(1))).toBe(false);
 });
+
+test('fullscreen consumes long OK without forwarding it to the hidden list; dialogs retain input', async () => {
+  ctx.dialogs = { isOpen: jest.fn(() => false) };
+  preview.select(channel(1));
+  expect(preview.onAction(Action.LONG_ENTER)).toBe(false);
+  preview.activate(channel(1));
+  await flush();
+  players[0].onAction.mockReturnValue(false);
+  expect(preview.onAction(Action.LONG_ENTER)).toBe(true);
+  expect(players[0].onAction).not.toHaveBeenCalled();
+  expect(players[0].destroy).not.toHaveBeenCalled();
+  ctx.dialogs.isOpen.mockReturnValue(true);
+  expect(preview.onAction(Action.LONG_ENTER)).toBe(false);
+  ctx.dialogs.isOpen.mockReturnValue(false);
+  preview.onBack();
+  expect(preview.onAction(Action.LONG_ENTER)).toBe(false);
+});
+
+test('category context reaches playback and follows channel changes without restarting the preview', async () => {
+  preview.destroy();
+  const changed = jest.fn();
+  preview = createLivePreview(ctx, { onChannelChange: changed });
+  preview.select(channel(1), '24h', { categoryId: 'sports', offset: 2 });
+  preview.activate(channel(1));
+  await flush();
+  const params = createPlayerPage.mock.calls[0][1];
+  expect(params.live).toEqual({ categoryId: 'sports', offset: 2 });
+  params.onChannelChange(channel(2), { categoryId: 'sports', offset: 3 });
+  expect(changed).toHaveBeenCalledWith(channel(2), { categoryId: 'sports', offset: 3 });
+  preview.onBack();
+  preview.select(channel(2), '24h', { categoryId: 'sports', offset: 3 });
+  preview.activate(channel(2));
+  expect(createPlayerPage).toHaveBeenCalledTimes(1);
+});

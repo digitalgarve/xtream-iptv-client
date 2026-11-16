@@ -347,3 +347,31 @@ test('a preview destroyed while settings load cannot start a stale stream', asyn
   await wait();
   expect(engine.start).not.toHaveBeenCalled();
 });
+
+test('CH+/CH− stays inside the selected category and reports the new list position', async () => {
+  const { page, ctx, engine } = await setup();
+  page.destroy();
+  const { db } = await ctx.active.get();
+  await dbPutMany(db, 'entry_cat', [
+    { key: 'live:i1|sports', entryKey: 'live:i1', type: 'live', categoryId: 'sports', added: 30 },
+    { key: 'live:i2|sports', entryKey: 'live:i2', type: 'live', categoryId: 'sports', added: 20 },
+  ]);
+  const changed = jest.fn();
+  const player = createPlayerPage(ctx, { type: 'live', entryKey: 'live:i1', title: 'Sky Uno', playlist: [{ id: 1, ext: '', title: '' }], live: { categoryId: 'sports', offset: 0 }, onChannelChange: changed });
+  player.mount();
+  try {
+    await wait();
+    player.onAction(Action.CHANNEL_UP);
+    await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/2', expect.any(Object));
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'live:i2' }), { categoryId: 'sports', offset: 1 });
+    const starts = engine.start.mock.calls.length;
+    player.onAction(Action.CHANNEL_UP);
+    await wait();
+    expect(engine.start).toHaveBeenCalledTimes(starts);
+    player.onAction(Action.CHANNEL_DOWN);
+    await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/1', expect.any(Object));
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'live:i1' }), { categoryId: 'sports', offset: 0 });
+  } finally { player.destroy(); }
+});

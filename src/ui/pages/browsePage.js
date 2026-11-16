@@ -83,6 +83,7 @@ export function createBrowsePage(ctx, params = {}) {
   let items = []; // sidebar entries
   let catNodes = [];
   let selected = 0; // index into `items` currently shown in the grid
+  let liveKeys = null; // ordered keys only; channel records are read for the requested window
   let list = null; // fully loaded entries for continue / favourites / genre views (read in memory as the grid grows)
   let hasMore = false;
   let total = 0; // titles of the view (the number in the head)
@@ -386,7 +387,6 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** Entries of the views that are not a plain catalog walk. */
   async function loadList(item) {
-    if (liveList && item.kind === 'all') return byKeys(await liveSequence(db));
     if (item.kind === 'continue') {
       const recent = await continueWatching(ctx, { providerId, limit: 200 });
       return byKeys(recent.filter((r) => r.type === type).map((r) => r.entryKey));
@@ -421,7 +421,12 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The next `count` entries of the view (from the in-memory list or the catalog). */
   async function readEntries(item, offset, count) {
-    if (LIST_KINDS.includes(item.kind) || (liveList && item.kind === 'all')) {
+    if (liveList && item.kind === 'all') {
+      if (!liveKeys) liveKeys = liveSequence(db);
+      const keys = await liveKeys;
+      return { entries: await byKeys(keys.slice(offset, offset + count)), hasMore: keys.length > offset + count, total: keys.length };
+    }
+    if (LIST_KINDS.includes(item.kind)) {
       if (!list) list = await loadList(item).catch(() => []); // read once per view, on the first cards that need it
       return { entries: list.slice(offset, offset + count), hasMore: list.length > offset + count };
     }
@@ -504,6 +509,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The focus is on `index`: the cards down to PREFETCH_ROWS rows below the screen are loaded (in the background). */
   function ensureLoaded(index) {
+    if (destroyed) return;
     const need = wantedCount(index, columns, screenRows());
     if (entries.length < need && hasMore) loadMore(need - entries.length).then(() => ensureLoaded(index));
   }
@@ -519,6 +525,7 @@ export function createBrowsePage(ctx, params = {}) {
     const token = (loadToken += 1);
     if (preview) { preview.stop(); preview.el.style.display = ''; }
     moreJob = null;
+    liveKeys = null;
     const item = items[selected] || items[0];
     if (isGuideKind(item.kind)) {
       if (preview) preview.el.style.display = 'none';
@@ -542,7 +549,7 @@ export function createBrowsePage(ctx, params = {}) {
     list = null; // the list views read their list again (on the first cards they need past the cached ones)
     const result = hit ? { entries: hit.entries, hasMore: hit.hasMore } : await readEntries(item, 0, firstCount);
     if (destroyed || token !== loadToken) return;
-    let count = hit ? hit.total : list ? list.length : await countEntries(db, { type, categoryId: viewCategory(item) }).catch(() => 0);
+    let count = hit ? hit.total : result.total !== undefined ? result.total : list ? list.length : await countEntries(db, { type, categoryId: viewCategory(item) }).catch(() => 0);
     if (destroyed || token !== loadToken) return;
     count = Math.max(count, result.entries.length);
     if (cacheKey && !hit) ctx.pageCache.set(cacheKey, { entries: result.entries, hasMore: result.hasMore, total: count });
@@ -837,7 +844,8 @@ export function createBrowsePage(ctx, params = {}) {
     }),
     onFocus: (i) => {
       if (!cardNodes[i]) return;
-      if (preview) preview.select(entries[i], timeFormat);
+      const item = items[selected];
+      if (preview) preview.select(entries[i], timeFormat, item && item.kind === 'category' ? { categoryId: item.id, offset: i } : null);
       syncImages(i); // first: a far jump (back to a title, the top) brings its rows into the page before scrolling to it
       cardNodes[i].classList.add('focused');
       ensureVisible(cardNodes[i], { first: i < columns });
@@ -874,11 +882,19 @@ export function createBrowsePage(ctx, params = {}) {
     if (liveList) {
       columns = 1;
       gridZone.model = createGrowingGridModel({ columns, getCount: () => entries.length, hasMore: () => hasMore, more: () => loadMore(BATCH_ROWS) });
-      preview = createLivePreview(ctx, { onChannelChange: async (entry) => {
-        const index = (list || entries).findIndex((row) => row.key === entry.key);
+      preview = createLivePreview(ctx, { onChannelChange: async (entry, context) => {
+        const token = loadToken;
+        const item = items[selected];
+        let index;
+        if (item && item.kind === 'category' && context && context.categoryId === item.id) index = context.offset;
+        else if (item && item.kind === 'all') {
+          if (!liveKeys) liveKeys = liveSequence(db);
+          index = (await liveKeys).indexOf(entry.key);
+        } else index = (list || entries).findIndex((row) => row.key === entry.key);
+        if (destroyed || token !== loadToken) return;
         if (index < 0) return;
         await loadUntil(index);
-        if (!destroyed) ctx.focus.focus(GRID_ZONE, index);
+        if (!destroyed && token === loadToken && entries[index] && entries[index].key === entry.key) ctx.focus.focus(GRID_ZONE, index);
       } });
       pageEl.appendChild(preview.el);
     }

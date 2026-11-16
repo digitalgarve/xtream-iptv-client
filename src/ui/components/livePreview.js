@@ -1,3 +1,4 @@
+import { Action } from '../../core/input.js';
 import { h } from '../dom.js';
 import { t } from '../../i18n/index.js';
 import { formatClockTime } from '../../core/clock.js';
@@ -12,6 +13,7 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
   const el = h('aside', { class: 'live-preview', 'aria-label': t('settings.liveView.list') }, video, title, programmes, hint);
   let player = null;
   let entry = null;
+  let live = null;
   let timer = null;
   let refresh = null;
   let generation = 0;
@@ -82,11 +84,13 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
       const selected = entry;
       const next = createPlayerPage({ ...ctx, router: { ...ctx.router, back: () => expand(false) } }, {
         type: 'live', entryKey: selected.key, title: selected.name, icon: selected.icon,
-        onChannelChange: (row) => {
+        live,
+        onChannelChange: (row, context) => {
+          live = context;
           entry = row;
           title.textContent = row.name;
           updateEpg(generation);
-          Promise.resolve(onChannelChange(row)).catch((err) => log.warn('Preview selection failed', err && err.message));
+          Promise.resolve(onChannelChange(row, context)).catch((err) => log.warn('Preview selection failed', err && err.message));
         },
         playlist: [{ id: selected.defaultId, ext: '', title: '' }], epgChannelId: selected.epgChannelId,
       });
@@ -111,7 +115,8 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
   }
 
   const canPreview = (row) => row && !row.isNetwork && !row.filterKind && row.defaultId !== undefined && !(ctx.parental && ctx.parental.isAdult(row));
-  function select(row, clockFormat = 'auto') {
+  function select(row, clockFormat = 'auto', context = null) {
+    live = context;
     if (entry && row && entry.key === row.key) return;
     stop();
     entry = row;
@@ -131,7 +136,7 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
     el, select, stop,
     activate(row) {
       if (!canPreview(row) || unsupported) return false;
-      if (!entry || entry.key !== row.key) select(row, timeFormat);
+      if (!entry || entry.key !== row.key) select(row, timeFormat, live);
       if (player) expand(true);
       else {
         clearTimeout(timer);
@@ -144,7 +149,10 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
       }
       return true;
     },
-    onAction: (action) => fullscreen && player ? player.onAction(action) : false,
+    onAction(action) {
+      if (!fullscreen || !player || (ctx.dialogs && ctx.dialogs.isOpen())) return false;
+      return action === Action.LONG_ENTER || player.onAction(action);
+    },
     onBack() {
       if (!fullscreen) return false;
       if (!player.onBack()) expand(false);

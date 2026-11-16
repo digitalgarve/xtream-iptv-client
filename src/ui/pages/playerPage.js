@@ -754,7 +754,7 @@ export function createPlayerPage(ctx, params) {
   /** Plays another channel / group (or another version of this one, `memberId`): title, guide and buttons follow. */
   function switchTo(entry, memberId = null) {
     liveEntry = entry;
-    if (params.onChannelChange) params.onChannelChange(entry);
+    if (params.onChannelChange) params.onChannelChange(entry, live ? { ...live } : null);
     title = entry.name;
     params.entryKey = entry.key;
     params.icon = entry.icon;

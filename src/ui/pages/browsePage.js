@@ -15,7 +15,7 @@ import { ensureVisible, revealNearest } from '../scroll.js';
 
 /** The page moves because of the pointer (wheel, finger, scrollbar), not because a key moved the focus. */
 const scrollHeldByUser = () => typeof document !== 'undefined' && document.body.classList.contains('pointer-mode');
-import { listCategories, listNetworks, pageEntries, getEntry, countEntries, liveSequence, LIVE_ALL } from '../../services/catalogQuery.js';
+import { listCategories, listNetworks, pageEntries, getEntry, countEntries, liveSequence, visibleKeys, LIVE_ALL } from '../../services/catalogQuery.js';
 import { readGuideIndex } from '../../services/guideIndex.js';
 import { genreKey } from '../../services/epgChannels.js';
 import { formatNumber } from '../../core/format.js';
@@ -30,7 +30,7 @@ const GUIDE_ZONE = 'browseGuide';
 const HEAD_ZONE = 'browseHead';
 import { SIDEBAR_ICON, GENRE_SKELETONS, LIST_KINDS, CACHED_KINDS, columnsFor, PREFETCH_ROWS, DEFAULT_SCREEN_ROWS, BATCH_ROWS, firstKeptRow, wantedCount, createGrowingGridModel, sidebarItems, indexOfFilter, isGuideKind } from './browse/model.js';
 import { createLivePreview } from '../components/livePreview.js';
-import { TOPBAR_ZONE } from '../components/topbar.js';
+import { sidebarNavigation } from './templates.js';
 
 export { SIDEBAR_ICON, GENRE_SKELETONS, columnsFor, PREFETCH_ROWS, firstKeptRow, wantedCount, createGrowingGridModel, sidebarItems, indexOfFilter };
 
@@ -605,9 +605,10 @@ export function createBrowsePage(ctx, params = {}) {
     // Counted like the genre view: rows with a programme of the category in the hours the guide shows.
     const from = floorHalfHour(Date.now()) - PAST_MS;
     const found = await ctx.epg.genreRows({ from, to: from + PAST_MS + SPAN_MS });
-    epgGenres = found.genres;
-    epgGenreKeys = found.rows;
-    epgGenres.forEach((g) => counts.set(`epgGenre:${g.key}`, found.rows.get(g.key).length));
+    // A kids profile: the adult rows are not counted (nor shown), a genre left without rows is not listed.
+    epgGenreKeys = new Map(Array.from(found.rows, ([key, keys]) => [key, visibleKeys(keys)]));
+    epgGenres = found.genres.filter((g) => epgGenreKeys.get(g.key).length);
+    epgGenres.forEach((g) => counts.set(`epgGenre:${g.key}`, epgGenreKeys.get(g.key).length));
   }
 
   /** The scheduled programmes of this provider, and the rows of their channels (the "scheduled" view). */
@@ -1033,13 +1034,12 @@ export function createBrowsePage(ctx, params = {}) {
     });
   });
 
+  const nav = sidebarNavigation(ctx, { sidebar: CATS_ZONE, contents: [GRID_ZONE, GUIDE_ZONE, HEAD_ZONE], hasEntries: () => items.length > 0, entryOnScreen: () => selected });
+
   return {
-    /** The bar's entry of this page pressed again: the focus comes to the sidebar (its entry of the page), nothing is loaded again. */
-    takeFocusFromBar() {
-      return items.length > 0 && ctx.focus.focus(CATS_ZONE, Math.max(0, selected));
-    },
-    /** Down from the top bar: the first entry of the sidebar. */
-    enterFromBar: () => items.length > 0 && ctx.focus.focus(CATS_ZONE, 0),
+    // The sidebar page template (templates.js): the bar, the sidebar and the content linked the same way on every such page.
+    takeFocusFromBar: nav.takeFocusFromBar,
+    enterFromBar: nav.enterFromBar,
     el: pageEl,
     /** Back: a selected row of the guide lets go; from the grid / guide the focus goes to the sidebar; then the main entry; then the page is left. */
     onAction: (action) => preview ? preview.onAction(action) : false,
@@ -1060,9 +1060,7 @@ export function createBrowsePage(ctx, params = {}) {
     },
     mount() {
       ctx.focus.register(catsZone);
-      ctx.focus.link(CATS_ZONE, 'up', TOPBAR_ZONE); // Up from the first entry: the top bar
-      // Left from the first column of the grid (or the start of the guide, the head's first button): the sidebar.
-      [GRID_ZONE, GUIDE_ZONE, HEAD_ZONE].forEach((id) => ctx.focus.link(id, 'left', CATS_ZONE));
+      nav.link();
       ctx.focus.register(gridZone);
       ctx.focus.register(guideZone);
       ctx.focus.register(headZone);

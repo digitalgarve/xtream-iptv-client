@@ -44,7 +44,6 @@ export function createDetailPage(ctx, params) {
   let collectionItems = []; // collections that hold this title: [{ id, name }]
   let categoryNames = new Map();
   let names = new Map(); // slot → name of the active providers (catalogUnion.js)
-  const providersEl = h('div', { class: 'detail-categories' });
   let db = null;
   let mergeAvailable = false; // grouping is on: a single channel can be merged by hand
   let networkChoices = []; // Live TV networks a channel can be added to: [{ key, name, networkId }]
@@ -89,7 +88,7 @@ export function createDetailPage(ctx, params) {
     { class: 'page detail loading' },
     backdropEl,
     poster,
-    h('div', { class: 'detail-body' }, titleEl, metaEl, versionEl, audioEl, actionsEl, plotEl, collectionsEl, providersEl, categoriesEl, tagsEl, ratingEl, directorEl, companiesEl, epgEl, episodesEl, castEl, relatedEl),
+    h('div', { class: 'detail-body' }, titleEl, metaEl, versionEl, audioEl, actionsEl, plotEl, collectionsEl, categoriesEl, tagsEl, ratingEl, directorEl, companiesEl, epgEl, episodesEl, castEl, relatedEl),
   );
 
   const data = () => ({
@@ -348,7 +347,6 @@ export function createDetailPage(ctx, params) {
 
   function renderCategories(next) {
     renderChips(collectionsEl, 'detailCollections', collectionItems, 'collection', next, t('nav.collections'), (item) => ctx.router.push('collection', { id: item.id, section: params.section || 'collections' }));
-    renderProviders();
     // The categories of each provider that has the title: "Categories <provider>" with several active, one line each.
     clear(categoriesEl);
     const bySlot = new Map();
@@ -367,18 +365,6 @@ export function createDetailPage(ctx, params) {
     renderRating();
     renderDirectors();
     renderCompanies();
-  }
-
-  /** "Provider": the providers that have this title (its versions), above the categories. */
-  function renderProviders() {
-    clear(providersEl);
-    if (!entry) return;
-    const ids = entry.members && entry.members.length ? entry.members.map((m) => m.id) : [entry.defaultId];
-    const slots = Array.from(new Set(ids.map((id) => decodeId(id).slot)));
-    const list = slots.map((slot) => names.get(slot)).filter(Boolean);
-    if (!list.length) return;
-    providersEl.appendChild(createChipLabel(t('detail.providers')));
-    list.forEach((name) => providersEl.appendChild(createChip({ text: name })));
   }
 
   /** The age rating (TMDB, the country of the language of the app), before the director. */
@@ -559,6 +545,19 @@ export function createDetailPage(ctx, params) {
     }
   }
 
+  /** An admin marks the title as adult or not: it applies to every profile (a kids profile no longer sees it). */
+  async function toggleAdult(adult) {
+    try {
+      await ctx.parental.mark(entry, !adult);
+      if (ctx.pageCache) ctx.pageCache.clear(); // the cards read again (the lock on the poster)
+      if (!destroyed) build();
+      ctx.notices.success(t(adult ? 'detail.adultUnmarked' : 'detail.adultMarked'), { key: 'adult' });
+    } catch (err) {
+      log.warn('Adult mark failed', err && err.message);
+      ctx.notices.error(t('error.UNKNOWN'), { key: 'adult' });
+    }
+  }
+
   function build() {
     if (!entry) return;
     const next = [];
@@ -637,6 +636,11 @@ export function createDetailPage(ctx, params) {
     if (buttons.length && entry.isGroup && selectedMember && manualIds.has(selectedMember.id)) {
       buttons.push({ id: 'ungroup', icon: 'remove', label: t('merge.remove'), run: ungroupChannel });
     }
+    // Only an admin: mark the title as adult, or (already adult, by the app or by hand) as not adult. Last, after the others.
+    if (buttons.length && ctx.profile && ctx.profile.admin && ctx.parental && ctx.parental.mark) {
+      const adult = ctx.parental.isAdult(entry);
+      buttons.push({ id: 'adult', icon: 'adult', active: adult, label: adult ? t('detail.unmarkAdult') : t('detail.markAdult'), run: () => toggleAdult(adult) });
+    }
     buttons.note = note;
     if (buttons.length) next.push({ id: 'detailActions', zone: createActions(buttons, 0) });
     else clear(actionsEl);
@@ -649,12 +653,19 @@ export function createDetailPage(ctx, params) {
     setRows(next);
   }
 
+  /** The names of the providers that have this title (its versions), only with more than one provider active. */
+  function titleProviders() {
+    if (!entry || names.size < 2) return [];
+    const ids = entry.members && entry.members.length ? entry.members.map((m) => m.id) : [entry.defaultId];
+    return Array.from(new Set(ids.map((id) => decodeId(id).slot))).sort((x, y) => x - y).map((slot) => names.get(slot)).filter(Boolean);
+  }
+
   function fillText() {
     poster.classList.toggle('square', Boolean(entry && entry.type === 'live'));
     const d = data();
     titleEl.textContent = d.title;
     clear(metaEl);
-    detailMetaParts({ type: entry && entry.type, ...d }).forEach((part, i) => {
+    detailMetaParts({ type: entry && entry.type, ...d, providers: titleProviders() }).forEach((part, i) => {
       if (i > 0) metaEl.appendChild(createMetaSeparator());
       metaEl.appendChild(part.kind === 'rating' ? createMetaRating(part.text) : createMetaText(part.text));
     });

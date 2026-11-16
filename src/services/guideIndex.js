@@ -1,4 +1,5 @@
 import { dbGet, dbPut, requestToPromise } from '../core/idb.js';
+import { isHidden } from './catalogQuery.js';
 
 /**
  * The rows of the programme guide as a small list kept in `meta`: `[key, epgChannelId]` of the Live TV groups (one per channel in several
@@ -32,5 +33,5 @@ export async function readGuideIndex(db) {
     rows = buildGuideIndex(entries, groups);
     await writeGuideIndex(db, rows).catch(() => undefined);
   }
-  return rows.map(([key, epgChannelId]) => ({ key, epgChannelId }));
+  return rows.filter(([key]) => !isHidden(key)).map(([key, epgChannelId]) => ({ key, epgChannelId })); // a kids profile: no adult rows
 }

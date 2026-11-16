@@ -6,7 +6,8 @@ cast and guides in a clean interface designed for a 1920x1080 screen. One app, t
 
 <p align="center"><img src="docs/screenshots/home.jpg" alt="Home screen" width="860"></p>
 
-> This project does not provide, host or link to any content. You need your own IPTV provider: an Xtream Codes account or an M3U playlist.
+> This project does not provide, host or link to any content. You need your own IPTV provider: an Xtream Codes account or an M3U playlist
+> (or several: they can be used together, as one catalog).
 
 > **For the best experience, set up TMDB, Trakt and OpenSubtitles** (all free, see [Optional services](#optional-services)): posters,
 > plots, cast and trailers, watch history on every device, and subtitles for any title.
@@ -31,37 +32,54 @@ still being tested on real devices.
 
 **Catalog**
 - **One title, one card.** Duplicates (4K, HD, dubbed, other categories) that share the provider's TMDB id are merged into one card,
-  with a dropdown to choose the version. Nothing is merged unless the provider says it is the same title.
+  with a dropdown to choose the version. Nothing is merged within a provider unless it says it is the same title.
+- **Several providers, one catalog.** Switch on as many providers as you like: their movies, series and channels are shown together,
+  the same title once (by TMDB id, or by name and year across providers), its versions from every provider in the dropdown (each
+  ending with its provider), the guides joined into one. The title page says which providers have it and lists the categories of each;
+  the sidebar has a "Categories <provider>" block per provider. With one provider everything is as before.
 - **Built for huge catalogs.** Tens of thousands of titles are synced in a background worker, stored locally and shown in lazily
   loaded grids. The cached catalog opens instantly and refreshes itself in the background.
 - **Clean titles and smart filters.** Language prefixes, quality tags and year suffixes are removed (optional). Provider and TMDB
   genres are merged, categories can be hidden per provider, and genres and categories can be pinned to the sidebar or added to the favorites.
 - **Search everything** from the top bar: movies, series, channels, collections and the programmes on TV in the next 24 hours.
+- **Title pages** with plot, cast, director, production companies, the age rating of your country, related titles, and **Rewind**: the
+  progress of a movie (or of a whole series) back to the start, also on Trakt, without starting the player.
 
 **Player**
 - Draggable progress bar, previous / next episode, an end-credits point set once per series (the next episode is offered from
-  there), aspect ratio, audio tracks, subtitles (embedded, read by the app from MKV and MP4 files when the TV does not show them, or from OpenSubtitles with timing adjustment), adjustable buffering,
-  resume and autoplay of the next episode.
+  there, otherwise 10 seconds before the end), aspect ratio, audio tracks (the one in the language of the app is chosen by itself),
+  subtitles (embedded, read by the app from MKV and MP4 files when the TV does not show them, or from OpenSubtitles with timing
+  adjustment), adjustable buffering, resume and autoplay of the next episode.
+- Live channels can be paused: play goes on from where you stopped, **Back to live** jumps to now.
+- Leaving the app and coming back keeps the player as it was, paused or playing.
 - The native engine of each platform: AVPlay on Tizen, the system player on webOS, ExoPlayer on Android.
 - Trailers from YouTube: in the app's own player on Samsung TVs, in the YouTube app or the browser elsewhere.
 
 **Live TV**
 
 - **Live TV format** on the Providers page selects Auto, HLS (`m3u8`) or MPEG-TS (`ts`) per Xtream provider. Auto uses the formats saved by the account check during setup/start-up catalog sync, falling back to HLS when unknown. Starting a channel does not wait for an account API request.
-- The programme on air on every channel card, the next 24 hours on the channel page, a full grid guide and scheduled viewing that
-  opens the channel when a programme starts, with an alert of the system when the app is in the background or closed (Android TV /
-  Fire TV and desktop notifications; on Samsung TVs the app starts on the channel).
+- The programme on air on every channel card, the next 24 hours on the channel page, a full grid guide (each programme shows its full
+  title and times after a moment) and scheduled viewing that opens the channel when a programme starts, with an alert of the system
+  when the app is in the background or closed (Android TV / Fire TV and desktop notifications; on Samsung TVs the app starts on the
+  channel). Scheduled programmes stay highlighted in the guide.
 - Channels in several qualities grouped into one card, channels of the same network (Rai, Sky, Dazn...) collected together.
 - Genres from the guide's categories (Sport, News, Movies...) in the sidebar: each opens the guide with only the programmes of that genre; they can be pinned or added to the favorites.
-- The guide is downloaded once a day after the rest of the start-up work; a custom XMLTV guide can replace the provider's.
+- The guide is downloaded once a day after the rest of the start-up work; it joins the guides of every active provider and, if you
+  set one, a custom XMLTV guide (one entry per programme).
 
 **Yours**
 - **Continue watching, favorites, collections and suggestions** (based on what you watch, from TMDB or Trakt).
+- **Profiles**: each with its avatar (20 to choose from), progress, favorites, collections, pins, scheduled viewing, Trakt account,
+  language and guide order. "Who's watching?" at every start (an access PIN is optional), switch from the avatar in the top bar. Kids
+  profiles never see adult content anywhere (an admin marks any title as adult, or not, from its page; leaving a kids profile takes the parental PIN of an adult profile); only admin profiles see all the settings
+  and the providers. Until a second profile is made, nothing changes.
 - **Trakt sync with a QR code**: history and progress shared with your other devices.
-- **Several providers**, each with its own database; favorites, collections and pins follow you between them.
+- **Several providers**, each with its own database and its table of counts; favorites, collections and pins follow you between them.
 - **Parental control**: a PIN set on the first start hides adult categories.
 - **Private by design**: no account, no analytics; keys stay on the device and credentials are masked in the logs.
-- **English, Italian and German**, following the device language or chosen manually.
+- **English, Italian and German**, following the device language or chosen manually (per profile).
+- **Made for the remote, works with a mouse or a finger**: tooltips on the icon buttons, the top bar reached with Up from the first
+  row of a page and left with Down, the sidebars entered with Right and reached again with Left.
 
 ## Compared with popular players
 
@@ -71,7 +89,7 @@ store listings). "Not advertised" means we found no mention of it, not that it i
 | | **Xtream IPTV** | [TiviMate](https://tivimate.com) | [IPTV Smarters Pro](https://www.iptvsmarters.com) | IBO Player |
 |---|---|---|---|---|
 | Platforms | Tizen, webOS, Android TV / Fire TV, Windows, macOS, Linux | Android TV / Fire TV | Android, Fire TV, Samsung, LG, iOS and others | Android TV / Fire TV, Samsung, LG |
-| Xtream Codes login, several providers | Yes | Yes | Yes | Yes |
+| Xtream Codes login, several providers | Yes, also active together as one catalog | Yes | Yes | Yes |
 | Programme guide (EPG grid) | Yes, with a custom XMLTV guide | Yes (its strong point) | Yes | Yes |
 | Catch-up / recording | No (catch-up planned) | Catch-up; recording with premium | Catch-up | Not advertised |
 | Programmes in the search | Yes | Yes | Not advertised | Not advertised |
@@ -88,7 +106,7 @@ store listings). "Not advertised" means we found no mention of it, not that it i
 | TMDB posters, plots, cast, trailers | Yes (own free key) | Not advertised | Partly (trailers, info) | Not advertised |
 | Trakt history and progress sync | Yes | No | Not advertised | Not advertised |
 | Subtitles from OpenSubtitles | Yes, by file hash, with timing | Not advertised | Not advertised | Not advertised |
-| Parental control | Yes (PIN) | Yes | Yes | Not advertised |
+| Parental control | Yes (PIN, kids profiles) | Yes | Yes | Not advertised |
 | Open source, no account, no analytics | Yes | No | No | No |
 
 ## Screenshots
@@ -100,7 +118,9 @@ store listings). "Not advertised" means we found no mention of it, not that it i
 | ![Live TV](docs/screenshots/live-tv.jpg) **Live TV** with the programme now playing | ![Search](docs/screenshots/search.jpg) **Search** from the top bar |
 | ![Movie detail](docs/screenshots/movie-detail.jpg) **Movie**: play, trailer, watched, favorite | ![Series detail](docs/screenshots/series-detail.jpg) **Series**: seasons and episodes |
 | ![Player](docs/screenshots/player.jpg) **Player** | ![Settings](docs/screenshots/settings.jpg) **Settings**: catalog, guide, services, preferences |
-| ![Providers](docs/screenshots/providers.jpg) **Providers** | |
+| ![Providers](docs/screenshots/providers.jpg) **Providers**: two active, each with its lists | ![Title of two providers](docs/screenshots/movie-providers.jpg) **One catalog**: the providers of a title, its categories per provider, versions from both |
+| ![Profiles](docs/screenshots/profiles.jpg) **Profiles** in Settings | ![Profile form](docs/screenshots/profile-form.jpg) **A profile**: avatar, name, kids, admin, access PIN |
+| ![Who's watching](docs/screenshots/who-is-watching.jpg) **Who's watching?** at start and when switching | |
 
 The screenshots use the fictional demo catalog of the mock server (`npm run screenshots`).
 
@@ -109,6 +129,8 @@ The screenshots use the fictional demo catalog of the mock server (`npm run scre
 1. **Install the app** with the guide of your platform (see [Platforms](#platforms)).
 2. **Add a provider**: choose **Xtream API** (server URL, username and password) or **M3U / XMLTV** (playlist URL and, optionally, its guide). The catalog downloads in the background.
 3. **Recommended:** type the TMDB, Trakt and OpenSubtitles keys in **Settings** (see below).
+4. **Optional:** add more providers from the **Provider** page (each one can be switched on or off; the active ones form one catalog),
+   and profiles for the family in **Settings → Profiles**.
 
 ## Optional services
 
@@ -151,19 +173,20 @@ again in the same session does not.
 
 ## Custom EPG
 
-If your provider's guide is missing or poor, *Settings → Preferences → Live TV → Custom EPG* accepts the address of an XMLTV guide
-(`http://` or `https://`). It is saved only if it answers with a valid XMLTV file and replaces the provider's guide (which is used
-again if it stops working). Channels are matched by the provider's `epg_channel_id`, so the guide must use the same ids. The field's
-"x" goes back to the provider's guide.
+If your provider's guide is missing or poor, *Settings → Live TV → Custom EPG* accepts the address of an XMLTV guide (`http://` or
+`https://`). It is saved only if it answers with a valid XMLTV file and joins the guides of the active providers: a programme found in
+more than one is kept once (the custom guide's). Channels are matched by the provider's `epg_channel_id`, so the guide must use the
+same ids. The field's "x" removes it.
 
 ## Remote control
 
 | Key | Action |
 |---|---|
-| Arrows | Move the focus |
+| Arrows | Move the focus; Up from the first row of a page reaches the top bar, Down from the bar comes back; Right enters a grid from its sidebar, Left goes back |
 | OK / Enter | Select (hold on a row of the guide for its actions) |
-| Back | Go back / close |
+| Back | Go back / close (from a page's content: its sidebar, then the top bar) |
 | Channel up / down | In the player: previous / next channel (live) or episode (series) |
+| Play / pause on a live channel | Pauses it; play goes on from there, the **Back to live** button jumps to now |
 | Play / pause / rewind / forward | In the player |
 | Left / right in the player | Seek (after OK on the progress bar) |
 

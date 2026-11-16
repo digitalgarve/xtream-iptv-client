@@ -13,7 +13,7 @@ import { getEntry, entryGenres } from '../../services/catalogQuery.js';
 import { collectionGenres, collectionImages, collectionKey, presentKeys, unionGenres } from '../../services/collections.js';
 import { formatNumber } from '../../core/format.js';
 import { log } from '../../core/logger.js';
-import { TOPBAR_ZONE } from '../components/topbar.js';
+import { sidebarNavigation } from './templates.js';
 
 const CATS_ZONE = 'collectionsCategories';
 const GRID_ZONE = 'collectionsGrid';
@@ -249,13 +249,12 @@ export function createCollectionsPage(ctx, params = {}) {
     else if (shown.length) ctx.focus.focus(GRID_ZONE, back && back.zone === GRID_ZONE ? Math.min(back.index, shown.length - 1) : 0);
   }
 
+  const nav = sidebarNavigation(ctx, { sidebar: CATS_ZONE, contents: [GRID_ZONE, HEAD_ZONE], hasEntries: () => items.length > 0, entryOnScreen: () => selected });
+
   return {
-    /** The bar's entry of this page pressed again: the focus comes to the sidebar (its entry of the page), nothing is loaded again. */
-    takeFocusFromBar() {
-      return items.length > 0 && ctx.focus.focus(CATS_ZONE, Math.max(0, selected));
-    },
-    /** Down from the top bar: the first entry of the sidebar. */
-    enterFromBar: () => items.length > 0 && ctx.focus.focus(CATS_ZONE, 0),
+    // The sidebar page template (templates.js): the bar, the sidebar and the content linked the same way on every such page.
+    takeFocusFromBar: nav.takeFocusFromBar,
+    enterFromBar: nav.enterFromBar,
     el: h('section', { class: 'page browse' }, h('div', { class: 'browse-body' }, catList, h('div', { class: 'browse-main' }, head, gridEl, empty))),
     /** On a genre (or favourites) Back first goes to "show all", the page is left from there. */
     onBack() {
@@ -276,8 +275,7 @@ export function createCollectionsPage(ctx, params = {}) {
     },
     mount() {
       ctx.focus.register(catsZone);
-      ctx.focus.link(CATS_ZONE, 'up', TOPBAR_ZONE); // Up from the first entry: the top bar
-      [GRID_ZONE, HEAD_ZONE].forEach((id) => ctx.focus.link(id, 'left', CATS_ZONE)); // Left from the first column: the sidebar
+      nav.link();
       ctx.focus.register(gridZone);
       ctx.focus.register(headZone);
       // Each zone keeps the focus: the sidebar Up / Down (OK opens its grid), the grid between its cards (Up from the first row: the

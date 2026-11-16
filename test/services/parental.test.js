@@ -88,3 +88,37 @@ test('subscription notice: only under 10 days, error once ended', () => {
   expect(subscriptionStatus({ expiresAt: now + 0.5 * day }, now)).toMatchObject({ type: 'warning', days: 0 });
   expect(subscriptionStatus({ expiresAt: now - 1 }, now)).toMatchObject({ type: 'error', expired: true });
 });
+
+test('admin marks: either way, shared by every profile, a mark equal to the app own check removed; what a kids profile must not see', async () => {
+  const db = await newDb();
+  const appDb = await newDb();
+  const providerDb = await openProviderDb(`parental-provider-marks-${n}`);
+  await dbPutMany(providerDb, 'categories', [{ key: 'movie:2', type: 'movie', id: '2', name: 'Adult XXX' }, { key: 'movie:1', type: 'movie', id: '1', name: 'Azione' }]);
+  const plain = { key: 'movie:t1', type: 'movie', categoryIds: ['1'] };
+  const auto = { key: 'movie:t2', type: 'movie', categoryIds: ['2'] };
+  const flagged = { key: 'movie:t3', type: 'movie', categoryIds: ['1'], adult: true };
+  await dbPutMany(providerDb, 'entries', [plain, auto, flagged]);
+  await dbPutMany(providerDb, 'groups', [{ key: 'live:n1', isNetwork: true, type: 'live', memberKeys: ['movie:t2'] }, { key: 'live:n2', isNetwork: true, type: 'live', memberKeys: ['movie:t1', 'movie:t2'] }]);
+  const svc = createParentalService({ db, appDb });
+  await svc.loadCategories(providerDb, 'p1');
+  expect([plain, auto, flagged].map((e) => svc.isAdult(e))).toEqual([false, true, true]);
+  await svc.mark(plain, true);
+  await svc.mark(auto, false);
+  expect([plain, auto, flagged].map((e) => svc.isAdult(e))).toEqual([true, false, true]);
+  // Another profile (its own database), same app database: the same marks.
+  const other = createParentalService({ db: await newDb(), appDb });
+  await other.loadCategories(providerDb, 'p1');
+  expect([plain, auto].map((e) => other.isAdult(e))).toEqual([true, false]);
+  const hidden = await other.hiddenFor(providerDb);
+  expect(Array.from(hidden.keys).sort()).toEqual(['movie:t1', 'movie:t3']);
+  expect(Array.from(hidden.categories)).toEqual(['movie:2']);
+  // Back to what the app finds: the marks go away; another provider has none.
+  await svc.mark(plain, false);
+  await svc.mark(auto, true);
+  const raw = await new Promise((resolve) => { const q = appDb.transaction('kv').objectStore('kv').get('adultMarks'); q.onsuccess = () => resolve(q.result); });
+  expect(JSON.stringify(raw)).not.toContain('movie:t');
+  await svc.loadCategories(providerDb, 'p2');
+  expect(svc.isAdult(plain)).toBe(false);
+  const all = await svc.hiddenFor(providerDb);
+  expect(Array.from(all.keys).sort()).toEqual(['live:n1', 'movie:t2', 'movie:t3']); // n1: its only channel hidden
+});

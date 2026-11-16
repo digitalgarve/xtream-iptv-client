@@ -11,7 +11,7 @@ import { ListModel } from '../focus/models.js';
 import { ensureVisible } from '../scroll.js';
 import { createCarousel } from '../components/carousel.js';
 import { addToCollection } from '../components/collectionFlows.js';
-import { getEntry } from '../../services/catalogQuery.js';
+import { getEntry, visibleKeys } from '../../services/catalogQuery.js';
 import { rebuildLive } from '../../services/rebuildLive.js';
 import { log } from '../../core/logger.js';
 
@@ -119,7 +119,7 @@ export function createNetworkPage(ctx, params) {
     const next = [];
     titleEl.textContent = network.name;
     clear(metaEl);
-    metaEl.appendChild(createMetaText(t('collections.items', { count: (network.memberKeys || []).length })));
+    metaEl.appendChild(createMetaText(t('collections.items', { count: visibleKeys(network.memberKeys || []).length })));
     const buttons = [
       { icon: 'heart', active: favorite, label: favorite ? t('detail.unfavorite') : t('detail.favorite'), run: toggleFavorite },
       { icon: 'collectionAdd', label: t('collections.add'), run: () => addToCollection(ctx, { providerId, entry: network }) },

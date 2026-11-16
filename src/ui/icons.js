@@ -1,4 +1,5 @@
 import { faHouse } from '@fortawesome/free-solid-svg-icons/faHouse';
+import { faShieldHalved } from '@fortawesome/free-solid-svg-icons/faShieldHalved';
 import { faFilm } from '@fortawesome/free-solid-svg-icons/faFilm';
 import { faTv } from '@fortawesome/free-solid-svg-icons/faTv';
 import { faArrowUp } from '@fortawesome/free-solid-svg-icons/faArrowUp';
@@ -161,6 +162,7 @@ const ICONS = {
   success: faCircleCheck,
   pin: faThumbtack,
   lock: faLock,
+  adult: faShieldHalved,
   backspace: faDeleteLeft,
   back: faArrowLeft,
   movie: faFilm, // the picture missing on a card: its media type

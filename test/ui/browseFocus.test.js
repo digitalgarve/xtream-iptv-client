@@ -186,7 +186,7 @@ test('a large live catalog reads only visible channel records and continues in o
   } finally { page.destroy(); read.mockRestore(); }
 });
 
-test('category selection passes its offset to preview and follows playback beyond the loaded window', async () => {
+test('returning to the category restores the playing channel beyond the loaded window', async () => {
   const previewModule = await import('../../src/ui/components/livePreview.js');
   const query = await import('../../src/services/catalogQuery.js');
   const { ctx, db } = await setup('browse-live-category-context');
@@ -201,7 +201,24 @@ test('category selection passes its offset to preview and follows playback beyon
     ctx.focus.focus('browseGrid', 2);
     expect(preview.select).toHaveBeenLastCalledWith(expect.any(Object), 'auto', { categoryId: '1', offset: 2 });
     const later = (await query.pageEntries(db, { type: 'live', categoryId: '1', offset: 25, limit: 1 })).entries[0];
-    await create.mock.calls[0][1].onChannelChange(later, { categoryId: '1', offset: 25 });
+    await tick(50);
+    const original = query.pageEntries;
+    let release;
+    const waiting = new Promise((resolve) => { release = resolve; });
+    const read = jest.spyOn(query, 'pageEntries').mockImplementationOnce(async (...args) => {
+      await waiting;
+      return original(...args);
+    });
+    let current = true;
+    const pending = create.mock.calls[0][1].onReturn(later, { categoryId: '1', offset: 25 }, () => current);
+    await tick(20);
+    expect(read).toHaveBeenCalled();
+    current = false; // The user moved again while Back was loading the list.
+    release();
+    await pending;
+    read.mockRestore();
+    expect(ctx.focus.active.index).toBe(2);
+    await create.mock.calls[0][1].onReturn(later, { categoryId: '1', offset: 25 }, () => true);
     expect(ctx.focus.active.index).toBe(25);
     expect(preview.select).toHaveBeenLastCalledWith(later, 'auto', { categoryId: '1', offset: 25 });
   } finally { page.destroy(); create.mockRestore(); }

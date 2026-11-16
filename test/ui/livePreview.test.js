@@ -113,19 +113,40 @@ test('fullscreen consumes long OK without forwarding it to the hidden list; dial
   expect(preview.onAction(Action.LONG_ENTER)).toBe(false);
 });
 
-test('category context reaches playback and follows channel changes without restarting the preview', async () => {
+test('fullscreen only remembers the latest channel; Back restores the list without restarting playback', async () => {
   preview.destroy();
   const changed = jest.fn();
-  preview = createLivePreview(ctx, { onChannelChange: changed });
+  preview = createLivePreview(ctx, { onReturn: changed });
   preview.select(channel(1), '24h', { categoryId: 'sports', offset: 2 });
   preview.activate(channel(1));
   await flush();
   const params = createPlayerPage.mock.calls[0][1];
   expect(params.live).toEqual({ categoryId: 'sports', offset: 2 });
   params.onChannelChange(channel(2), { categoryId: 'sports', offset: 3 });
-  expect(changed).toHaveBeenCalledWith(channel(2), { categoryId: 'sports', offset: 3 });
+  params.onChannelChange(channel(3), { categoryId: 'sports', offset: 4 });
+  expect(changed).not.toHaveBeenCalled();
+  expect(players[0].destroy).not.toHaveBeenCalled();
   preview.onBack();
-  preview.select(channel(2), '24h', { categoryId: 'sports', offset: 3 });
-  preview.activate(channel(2));
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(changed).toHaveBeenCalledWith(channel(3), { categoryId: 'sports', offset: 4 }, expect.any(Function));
+  preview.select(channel(3), '24h', { categoryId: 'sports', offset: 4 });
+  preview.activate(channel(3));
+  expect(players[0].destroy).not.toHaveBeenCalled();
   expect(createPlayerPage).toHaveBeenCalledTimes(1);
+});
+
+test.each(['selection', 'fullscreen', 'destroy'])('a pending return cannot restore stale focus after %s', async (action) => {
+  preview.destroy();
+  let isCurrent;
+  preview = createLivePreview(ctx, { onReturn: (row, context, current) => { isCurrent = current; } });
+  preview.select(channel(1));
+  preview.activate(channel(1));
+  await flush();
+  // Pointer Back and Stop use the embedded router's Back handler too.
+  createPlayerPage.mock.calls[0][0].router.back();
+  expect(isCurrent()).toBe(true);
+  if (action === 'selection') preview.select(channel(2));
+  else if (action === 'fullscreen') preview.activate(channel(1));
+  else preview.destroy();
+  expect(isCurrent()).toBe(false);
 });

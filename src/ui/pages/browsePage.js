@@ -882,7 +882,7 @@ export function createBrowsePage(ctx, params = {}) {
     if (liveList) {
       columns = 1;
       gridZone.model = createGrowingGridModel({ columns, getCount: () => entries.length, hasMore: () => hasMore, more: () => loadMore(BATCH_ROWS) });
-      preview = createLivePreview(ctx, { onChannelChange: async (entry, context) => {
+      preview = createLivePreview(ctx, { onReturn: async (entry, context, isCurrent) => {
         const token = loadToken;
         const item = items[selected];
         let index;
@@ -891,10 +891,10 @@ export function createBrowsePage(ctx, params = {}) {
           if (!liveKeys) liveKeys = liveSequence(db);
           index = (await liveKeys).indexOf(entry.key);
         } else index = (list || entries).findIndex((row) => row.key === entry.key);
-        if (destroyed || token !== loadToken) return;
+        if (destroyed || token !== loadToken || !isCurrent()) return;
         if (index < 0) return;
         await loadUntil(index);
-        if (!destroyed && token === loadToken && entries[index] && entries[index].key === entry.key) ctx.focus.focus(GRID_ZONE, index);
+        if (!destroyed && token === loadToken && isCurrent() && entries[index] && entries[index].key === entry.key) ctx.focus.focus(GRID_ZONE, index);
       } });
       pageEl.appendChild(preview.el);
     }

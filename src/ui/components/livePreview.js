@@ -5,7 +5,7 @@ import { formatClockTime } from '../../core/clock.js';
 import { log } from '../../core/logger.js';
 
 /** One embedded player: expanding it changes only the video rectangle, never opens a second stream. */
-export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
+export function createLivePreview(ctx, { onReturn = () => {} } = {}) {
   const video = h('div', { class: 'live-preview-video' });
   const title = h('h2', { text: t('livePreview.select') });
   const programmes = h('div', { class: 'live-preview-programmes' });
@@ -19,6 +19,7 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
   let generation = 0;
   let epgRequest = 0;
   let fullscreen = false;
+  let returnRequest = 0;
   let timeFormat = 'auto';
   let unsupported = false;
 
@@ -35,10 +36,20 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
   }
 
   function expand(on) {
+    returnRequest += 1;
     fullscreen = on;
     el.classList.toggle('is-fullscreen', on);
     document.body.classList.toggle('live-preview-fullscreen', on);
     resize();
+  }
+
+  function returnToList() {
+    if (!fullscreen) return;
+    expand(false);
+    const request = returnRequest;
+    title.textContent = entry.name;
+    updateEpg(generation);
+    Promise.resolve(onReturn(entry, live, () => request === returnRequest)).catch((err) => log.warn('Preview return failed', err && err.message));
   }
 
   function stop() {
@@ -56,6 +67,7 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
   }
 
   async function updateEpg(token) {
+    if (fullscreen) return;
     const request = ++epgRequest;
     try {
       const result = ctx.epg && entry.epgChannelId ? await ctx.epg.nowNext(entry.epgChannelId) : {};
@@ -82,15 +94,13 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
       const { createPlayerPage } = await import('../pages/playerPage.js');
       if (token !== generation) return;
       const selected = entry;
-      const next = createPlayerPage({ ...ctx, router: { ...ctx.router, back: () => expand(false) } }, {
+      const next = createPlayerPage({ ...ctx, router: { ...ctx.router, back: returnToList } }, {
         type: 'live', entryKey: selected.key, title: selected.name, icon: selected.icon,
         live,
         onChannelChange: (row, context) => {
           live = context;
           entry = row;
-          title.textContent = row.name;
-          updateEpg(generation);
-          Promise.resolve(onChannelChange(row, context)).catch((err) => log.warn('Preview selection failed', err && err.message));
+          returnRequest += 1;
         },
         playlist: [{ id: selected.defaultId, ext: '', title: '' }], epgChannelId: selected.epgChannelId,
       });
@@ -116,6 +126,7 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
 
   const canPreview = (row) => row && !row.isNetwork && !row.filterKind && row.defaultId !== undefined && !(ctx.parental && ctx.parental.isAdult(row));
   function select(row, clockFormat = 'auto', context = null) {
+    returnRequest += 1;
     live = context;
     if (entry && row && entry.key === row.key) return;
     stop();
@@ -155,7 +166,7 @@ export function createLivePreview(ctx, { onChannelChange = () => {} } = {}) {
     },
     onBack() {
       if (!fullscreen) return false;
-      if (!player.onBack()) expand(false);
+      if (!player.onBack()) returnToList();
       return true;
     },
     destroy() { stop(); window.removeEventListener('resize', resize); },

@@ -36,6 +36,7 @@ export { flattenEpisodes, pickNextEpisode, formatRuntime, seasonsLabel, episodes
 
 export function createDetailPage(ctx, params) {
   let entry = null;
+  let liveGroup = null;
   let providerId = null;
   let info = null; // provider details (plot, cast, seasons...)
   let meta = null; // TMDB (localized text, rating, credits)
@@ -104,7 +105,7 @@ export function createDetailPage(ctx, params) {
     const playlist = list || [{ id: id || (selectedMember ? selectedMember.id : entry.defaultId), ext: ext !== undefined ? ext : selectedMember ? selectedMember.ext : '', title: '' }];
     ctx.router.push('player', {
       type: entry.type,
-      entryKey: entry.key,
+      entryKey: (liveGroup || entry).key,
       title: data().title,
       icon: entry.icon,
       playlist,
@@ -130,14 +131,16 @@ export function createDetailPage(ctx, params) {
     ctx.router.push('player', { type: 'trailer', trailer: { videoId }, entryKey: entry.key, title: data().title, playlist: [{ id: '', ext: '', title: t('detail.trailer') }], index: 0, section: params.section });
   }
 
+  const versions = () => (liveGroup || entry).members;
+
   async function chooseStream() {
     const value = await ctx.dialogs.choose({
       title: t('detail.version'),
-      options: entry.members.map((m) => ({ label: streamLabel(m, names), value: m.id })),
+      options: versions().map((m) => ({ label: streamLabel(m, names), value: m.id })),
       selected: selectedMember.id,
     });
     if (value === null || destroyed) return;
-    selectedMember = entry.members.find((m) => m.id === value);
+    selectedMember = versions().find((m) => m.id === value);
     updateCategoryItems();
     fillText(); // the picture follows the version
     build();
@@ -145,7 +148,7 @@ export function createDetailPage(ctx, params) {
 
   /** The categories shown are the ones of the version that is selected (a grouped channel changes them with the version). */
   function updateCategoryItems() {
-    const ids = entry.isGroup && selectedMember ? [selectedMember.categoryId] : entry.categoryIds || [];
+    const ids = (entry.isGroup || liveGroup) && selectedMember ? [selectedMember.categoryId] : entry.categoryIds || [];
     categoryItems = ids.filter((id) => categoryNames.has(id)).map((id) => ({ id, name: categoryNames.get(id) }));
   }
 
@@ -563,8 +566,8 @@ export function createDetailPage(ctx, params) {
 
     // Version dropdown, right under the subtitle and before the plot.
     clear(versionEl);
-    if ((entry.type === 'movie' || entry.isGroup) && entry.members.length > 1) {
-      const select = createSelectField({ id: 'detailVersion', label: '', text: `${streamLabel(selectedMember, names)} (${entry.members.length})`, onOpen: chooseStream });
+    if ((entry.type === 'movie' || entry.isGroup || liveGroup) && versions().length > 1) {
+      const select = createSelectField({ id: 'detailVersion', label: '', text: `${streamLabel(selectedMember, names)} (${versions().length})`, onOpen: chooseStream });
       versionEl.appendChild(select.el);
       next.push({ id: 'detailVersion', zone: select.zone });
     }
@@ -656,7 +659,7 @@ export function createDetailPage(ctx, params) {
       metaEl.appendChild(part.kind === 'rating' ? createMetaRating(part.text) : createMetaText(part.text));
     });
     plotEl.textContent = (meta && meta.overview) || (info && info.plot) || '';
-    const logo = entry && entry.isGroup && selectedMember && selectedMember.icon ? selectedMember.icon : entry && entry.icon;
+    const logo = entry && (entry.isGroup || liveGroup) && selectedMember && selectedMember.icon ? selectedMember.icon : entry && entry.icon;
     const img = (meta && meta.poster) || (info && info.cover) || logo;
     if (img && img !== posterUrl) {
       posterUrl = img;
@@ -700,7 +703,14 @@ export function createDetailPage(ctx, params) {
     db = current.db;
     entry = await getEntry(current.db, params.entryKey);
     if (!entry || destroyed) return;
-    selectedMember = entry.members.find((m) => m.id === entry.defaultId) || entry.members[0];
+    if (entry.type === 'live' && entry.groupKey) {
+      const group = await getEntry(db, entry.groupKey);
+      if (destroyed) return;
+      // A restricted group still opens through its existing parental gate.
+      const restricted = group && ctx.parental && ctx.parental.isAdult(group) && !ctx.parental.isAdult(entry);
+      if (group && group.isGroup && !restricted && group.members.some((m) => m.id === entry.defaultId)) liveGroup = group;
+    }
+    selectedMember = versions().find((m) => m.id === entry.defaultId) || entry.members[0];
     // The provider's details start downloading at once; the local reads run side by side (they used to wait for each other).
     const detailsJob = entry.type === 'series' ? ctx.details.series(entry.defaultId) : entry.type === 'movie' ? ctx.details.vod(entry.defaultId) : Promise.resolve({});
     detailsJob.catch(() => undefined); // handled below, where it is awaited

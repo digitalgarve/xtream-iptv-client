@@ -254,7 +254,7 @@ export function createBrowsePage(ctx, params = {}) {
   }
   let sidebarVersion = null; // read before the sidebar is worked out: a sync meanwhile leaves the saved copy invalid
 
-  const sidebarKey = () => `sidebar:${providerId}:${type}${liveList ? ':list' : ''}`;
+  const sidebarKey = () => `sidebar:${providerId}:${type}${liveList ? ':list' : ''}:${ctx.profile && ctx.profile.kids ? 'kids' : 'adult'}`;
 
   let suggestionsCache = null;
   async function suggestionEntries(fresh = false) {
@@ -907,7 +907,8 @@ export function createBrowsePage(ctx, params = {}) {
     pinned = await ctx.pins.list(providerId, type).catch(() => []);
     // Seen before (and the catalog has not changed since): categories, genres, networks and their numbers come from the cache.
     if (type === 'live' && ctx.schedules) keepScheduled(await ctx.schedules.list(providerId).catch(() => []));
-    sidebarVersion = await derivedVersion(db, { genres: true, locale: i18n.getLocale() }).catch(() => null);
+    // Kids sidebars stay in memory: each profile reload rebuilds them with the current adult marks.
+    sidebarVersion = ctx.profile && ctx.profile.kids ? null : await derivedVersion(db, { genres: true, locale: i18n.getLocale() }).catch(() => null);
     let cachedSidebar = ctx.pageCache ? ctx.pageCache.get(sidebarKey()) : null;
     let stale = false; // the saved copy is from before a sync / genre job: shown at once, worked out again behind it
     if (!cachedSidebar && sidebarVersion) {

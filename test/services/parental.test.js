@@ -4,6 +4,8 @@ import { openProviderDb } from '../../src/db/providerDb.js';
 import { dbPutMany } from '../../src/core/idb.js';
 import { createParentalService, hashPin, isAdultCategoryName } from '../../src/services/parental.js';
 import { createPinsService } from '../../src/services/pins.js';
+import { getEntry, pageEntries, setHidden } from '../../src/services/catalogQuery.js';
+import { writeEntries } from '../../src/services/catalogSync.js';
 import { subscriptionStatus } from '../../src/services/subscription.js';
 
 let n = 0;
@@ -121,4 +123,35 @@ test('admin marks: either way, shared by every profile, a mark equal to the app 
   expect(svc.isAdult(plain)).toBe(false);
   const all = await svc.hiddenFor(providerDb);
   expect(Array.from(all.keys).sort()).toEqual(['live:n1', 'movie:t2', 'movie:t3']); // n1: its only channel hidden
+});
+
+test.each([false, true])('adult group restrictions cover category channels and survive reload (automatic group flag: %s)', async (adult) => {
+  const db = await newDb();
+  const providerDb = await openProviderDb(`parental-group-${n}`);
+  const group = { key: 'live:g:channel', type: 'live', isGroup: true, adult, added: 2, memberIds: [1, 2], categoryIds: ['1'], members: [{ entryKey: 'live:i1' }, { entryKey: 'live:i2' }] };
+  const channels = [1, 2].map((id) => ({ key: `live:i${id}`, type: 'live', defaultId: id, groupKey: group.key, adult: id === 1, categoryIds: ['1'], added: id }));
+  const unrelated = { key: 'live:i3', type: 'live', defaultId: 3, categoryIds: ['1'], added: 3 };
+  await writeEntries(providerDb, 'live', [...channels, unrelated], { groups: [group] });
+  const svc = createParentalService({ db });
+  await svc.loadCategories(providerDb, 'p');
+  await svc.mark(channels[0], false);
+  await svc.mark(group, true);
+  expect(channels.map(svc.isAdult)).toEqual([true, true]);
+  expect(svc.isAdult(unrelated)).toBe(false);
+  const reloaded = createParentalService({ db });
+  await reloaded.loadCategories(providerDb, 'p');
+  expect(channels.map(reloaded.isAdult)).toEqual([true, true]);
+  try {
+    setHidden(await reloaded.hiddenFor(providerDb));
+    expect(await getEntry(providerDb, channels[0].key)).toBeUndefined();
+    const page = await pageEntries(providerDb, { type: 'live', categoryId: '1' });
+    expect(page.entries.map((entry) => entry.key)).toEqual([unrelated.key]);
+  } finally {
+    setHidden(null);
+  }
+  await reloaded.mark(group, false);
+  expect(channels.map(reloaded.isAdult)).toEqual([false, false]);
+  expect((await reloaded.hiddenFor(providerDb)).keys.size).toBe(0);
+  db.close();
+  providerDb.close();
 });

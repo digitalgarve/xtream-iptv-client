@@ -39,6 +39,7 @@ export function createParentalService({ db, appDb = db, random = Math.random }) 
   let adultIds = { movie: new Set(), series: new Set(), live: new Set() };
   let providerId = null;
   let marks = {}; // the marks of the active provider
+  let channelGroups = new Map();
 
   function autoAdult(entry) {
     if (entry && entry.adult) return true;
@@ -46,9 +47,14 @@ export function createParentalService({ db, appDb = db, random = Math.random }) 
     if (!ids || !adultIds[entry.type]) return false;
     return ids.some((id) => adultIds[entry.type].has(String(id)));
   }
-  function isAdultEntry(entry) {
+  function ownAdult(entry) {
     if (entry && entry.key && Object.prototype.hasOwnProperty.call(marks, entry.key)) return marks[entry.key];
     return autoAdult(entry);
+  }
+  function isAdultEntry(entry) {
+    const group = entry && channelGroups.get(entry.groupKey);
+    // A group restriction also gates its individual channels, even if a channel was marked safe.
+    return Boolean(group && ownAdult(group)) || ownAdult(entry);
   }
 
   async function load() {
@@ -78,8 +84,10 @@ export function createParentalService({ db, appDb = db, random = Math.random }) 
       providerId = id;
       const all = id ? await kvGet(appDb, MARKS_KEY, {}) : {};
       marks = (all && all[id]) || {};
+      const groups = await requestToPromise(providerDb.transaction('groups', 'readonly').objectStore('groups').getAll());
+      channelGroups = new Map(groups.filter((group) => !isNetworkKey(group.key)).map((group) => [group.key, group]));
     },
-    /** Adult title? A mark of an admin first; then the provider's own flag (`is_adult`); then a category whose name marks it. */
+    /** Adult title? A restricted channel group takes precedence; otherwise admin marks, provider flags and category names apply. */
     isAdult: isAdultEntry,
     /** An admin marks a title as adult (`adult` true) or not: a mark equal to what the app finds by itself is simply removed. */
     async mark(entry, adult) {

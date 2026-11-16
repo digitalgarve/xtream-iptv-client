@@ -56,6 +56,11 @@ export function createAvPlayEngine() {
 
   /** Opens `url` in AVPlay with the listener of the page's handlers. */
   function open(api, { url, bufferSeconds, handlers }) {
+    const fail = (stage, error) => {
+      log.warn('AVPlay', stage, String(error), describeState(api));
+      handlers.onError(`${stage}: ${error}`);
+    };
+    log.info('AVPlay opening stream', /\.(m3u8|ts)(?:[?#]|$)/i.exec(url)?.[1] || 'other');
     api.open(url);
     api.setDisplayRect(displayRect.x, displayRect.y, displayRect.width, displayRect.height);
     api.setListener({
@@ -63,7 +68,7 @@ export function createAvPlayEngine() {
       onbufferingprogress: (percent) => handlers.onBuffering(percent),
       onbufferingcomplete: () => handlers.onBufferingDone(),
       onstreamcompleted: () => handlers.onEnded(),
-      onerror: (error) => handlers.onError(error),
+      onerror: (error) => fail('stream error', error),
       // Embedded subtitles arrive as events (text in HTML, duration in ms); the page draws them (see setSubtitleTrack).
       // Callback arguments: (duration, subtitles, type, attributes). An empty text clears the line.
       onsubtitlechange: (duration, text, type, attributes) => {
@@ -88,7 +93,7 @@ export function createAvPlayEngine() {
         // firmwares send no more lines once it was on.
         handlers.onPrepared();
       },
-      (error) => handlers.onError(`prepare failed: ${error}`)
+      (error) => fail('prepare failed', error)
     );
   }
 
@@ -107,7 +112,12 @@ export function createAvPlayEngine() {
       if (!api) throw new Error('AVPlay is not available');
       this.stop();
       makeElement();
-      open(api, { url, bufferSeconds, handlers });
+      try {
+        open(api, { url, bufferSeconds, handlers });
+      } catch (err) {
+        log.warn('AVPlay start failed', String(err), describeState(api));
+        throw err;
+      }
     },
     setDisplayRect(rect) {
       displayRect = rect;
@@ -195,12 +205,15 @@ export function createAvPlayEngine() {
       eventsLogged = 0;
       const api = av();
       try {
-        if (api) {
-          api.stop();
-          api.close();
-        }
+        if (api) api.stop();
       } catch {
         /* already stopped */
+      }
+      // A failed stop must not skip releasing the previous stream connection.
+      try {
+        if (api) api.close();
+      } catch (err) {
+        log.warn('AVPlay close failed', err && err.message);
       }
       if (element) element.remove();
       element = null;

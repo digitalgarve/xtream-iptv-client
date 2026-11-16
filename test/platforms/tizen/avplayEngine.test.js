@@ -87,6 +87,41 @@ test('audio selection reports AVPlay success and failure to the caller', () => {
   expect(engine.setAudioTrack(3)).toBe(false);
 });
 
+test('a failed stop still closes the old stream before opening a new one', () => {
+  const calls = [];
+  global.webapis = { avplay: {
+    open: () => calls.push('open'), prepareAsync() {}, setDisplayRect() {}, setListener() {}, setBufferingParam() {},
+    stop: () => { calls.push('stop'); throw new Error('stop failed'); },
+    close: () => calls.push('close'),
+  } };
+  const engine = createAvPlayEngine();
+  engine.start('http://h/live/user/password/1.ts', { handlers: {} });
+  expect(calls).toEqual(['stop', 'close', 'open']);
+  engine.stop();
+  expect(calls.slice(-2)).toEqual(['stop', 'close']);
+  expect(document.querySelector('object[type="application/avplayer"]')).toBeNull();
+});
+
+test('connection failure records format, phase and player state without the stream credentials', () => {
+  const { log } = require('../../../src/core/logger.js');
+  log.clear();
+  global.webapis = { avplay: {
+    open() {}, setDisplayRect() {}, setListener() {}, setBufferingParam() {}, stop() {}, close() {},
+    getState: () => 'IDLE',
+    prepareAsync: (ok, fail) => fail('InvalidAccessError: PLAYER_ERROR_CONNECTION_FAILED'),
+  } };
+  const onError = jest.fn();
+  const engine = createAvPlayEngine();
+  engine.start('http://h/live/private-user/private-password/1.ts', { handlers: { onError } });
+  expect(onError).toHaveBeenCalledWith('prepare failed: InvalidAccessError: PLAYER_ERROR_CONNECTION_FAILED');
+  const messages = log.entries().map((e) => e.message).join('\n');
+  expect(messages).toContain('AVPlay opening stream ts');
+  expect(messages).toContain('AVPlay prepare failed InvalidAccessError: PLAYER_ERROR_CONNECTION_FAILED state IDLE');
+  expect(messages).not.toContain('private-user');
+  expect(messages).not.toContain('private-password');
+  engine.stop();
+});
+
 test('preview rectangle survives stream changes and expands without reopening AVPlay', () => {
   const api = { open: jest.fn(), setDisplayRect: jest.fn(), prepareAsync: jest.fn(), setListener: jest.fn(), setBufferingParam: jest.fn(), stop: jest.fn(), close: jest.fn() };
   global.webapis = { avplay: api };

@@ -52,14 +52,23 @@
     flex: none;
 
     .btn {
+      flex: none; // fixed sizes: the buttons line up from row to row
       margin: 0 0 0 12px;
     }
 
-    // Active or not: its label and the switch.
+    .btn.icon-only {
+      width: 82px;
+    }
+
+    // Active or not: its label and the switch, the same width either way (the buttons after it line up from row to row).
     .btn.provider-toggle {
       display: flex;
       align-items: center;
-      width: auto;
+      justify-content: space-between;
+      width: 230px;
+      min-width: 230px;
+      max-width: 230px;
+      white-space: nowrap;
 
       .toggle {
         margin-left: 14px;
@@ -68,13 +77,17 @@
   }
 }
 
-// An active provider: the table of its lists right under its row, as one block.
+// Every provider: its row and, while it is active, the table of its lists right under it, as one block.
 .provider-block {
   margin-bottom: 20px;
 
   .provider-row {
     margin-bottom: 0;
     border-radius: 6px 6px 0 0;
+  }
+
+  &.inactive .provider-row {
+    border-radius: 6px;
   }
 
   .provider-table {

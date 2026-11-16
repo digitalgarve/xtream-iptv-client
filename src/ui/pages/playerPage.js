@@ -24,7 +24,6 @@ const NEXT_COUNTDOWN_S = 10;
 // Without an end credits point the "next episode" notice appears as long before the end as its countdown: it reaches zero at the end.
 const NEXT_OFFER_S = NEXT_COUNTDOWN_S;
 const NEXT_MIN_DURATION_S = 240;
-const SEEK_SHORT = 10;
 const SEEK_LONG = 30;
 const SCRUB_STEP = 30;
 const SCRUB_CONFIRM_MS = 2000; // the moved position is applied after this long without a key
@@ -270,6 +269,12 @@ export function createPlayerPage(ctx, params) {
     scrubTimer = setTimeout(() => {
       if (!destroyed && scrub !== null) endScrub(true);
     }, SCRUB_CONFIRM_MS);
+  }
+
+  /** Left / right with the controls hidden: the focus on the progress pointer and the first step, with the same wait. */
+  function scrubFromHidden(delta) {
+    focusBar();
+    stepScrub(delta);
   }
 
   // Pointer (Smart Remote / mouse): click or drag on the bar.
@@ -913,8 +918,9 @@ export function createPlayerPage(ctx, params) {
     [Action.PAUSE]: () => controller.getState().status === 'playing' && togglePause(),
     [Action.PLAY_PAUSE]: () => togglePause(),
     // Live: the arrows bring the controls with the focus on the first button on the left; only CH+ / CH- change channel.
-    [Action.LEFT]: () => (isLive ? enterFocus() : controller.seekBy(-SEEK_SHORT)),
-    [Action.RIGHT]: () => (isLive ? enterFocus() : controller.seekBy(SEEK_SHORT)),
+    // On demand: the arrows bring the progress pointer and move it, applied once it stops (as on the pointer): never a jump at once.
+    [Action.LEFT]: () => (isLive ? enterFocus() : scrubFromHidden(-SCRUB_STEP)),
+    [Action.RIGHT]: () => (isLive ? enterFocus() : scrubFromHidden(SCRUB_STEP)),
     [Action.REWIND]: () => controller.seekBy(-SEEK_LONG),
     [Action.FAST_FORWARD]: () => controller.seekBy(SEEK_LONG),
     [Action.UP]: () => (isLive ? enterFocus() : focusBar()),

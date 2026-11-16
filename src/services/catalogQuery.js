@@ -9,10 +9,27 @@ const storeOf = (key) => (isCompositeKey(key) ? 'groups' : 'entries');
 
 const MAX_ADDED = Number.MAX_SAFE_INTEGER;
 
+/**
+ * What this profile must not see (a kids profile: adult titles), applied by every read of the catalog below: the keys of the entries
+ * (titles, channel groups, networks left without a channel) and the keys of the categories (`type:id`). Null: nothing hidden (no cost).
+ */
+let hidden = null;
+let hiddenCategories = null;
+export function setHidden(next) {
+  hidden = next && next.keys && next.keys.size ? next.keys : null;
+  hiddenCategories = next && next.categories && next.categories.size ? next.categories : null;
+}
+/** Is this entry key hidden from the profile? */
+export const isHidden = (key) => Boolean(hidden && hidden.has(key));
+/** The keys the profile may see. */
+export const visibleKeys = (keys) => (hidden ? keys.filter((key) => !hidden.has(key)) : keys);
+const categoryKey = (row) => row.key || `${row.type}:${row.id}`;
+
 /** Categories of one type, alphabetical (locale-aware). */
-export async function listCategories(db, type) {
+export async function listCategories(db, type, { all: everything = false } = {}) {
   const tx = db.transaction('categories', 'readonly');
-  const all = await requestToPromise(tx.objectStore('categories').getAll(IDBKeyRange.bound(`${type}:`, `${type}:￿`)));
+  let all = await requestToPromise(tx.objectStore('categories').getAll(IDBKeyRange.bound(`${type}:`, `${type}:￿`)));
+  if (hiddenCategories && !everything) all = all.filter((row) => !hiddenCategories.has(categoryKey(row)));
   return all.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
@@ -34,11 +51,27 @@ export function pageEntries(db, { type, categoryId = null, offset = 0, limit = 2
       : IDBKeyRange.bound([type, 0], [type, MAX_ADDED]);
     const rows = [];
     let skipped = offset === 0;
+    let toSkip = offset; // with hidden entries the offset counts the visible rows only: walked one by one
     const request = source.openCursor(range, 'prev');
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) return;
+      if (hidden) {
+        const key = useCategory ? cursor.value.entryKey : cursor.value.key;
+        if (hidden.has(key)) {
+          cursor.continue();
+          return;
+        }
+        if (toSkip > 0) {
+          toSkip -= 1;
+          cursor.continue();
+          return;
+        }
+        rows.push(cursor.value);
+        if (rows.length <= limit) cursor.continue();
+        return;
+      }
       if (!skipped) {
         skipped = true;
         cursor.advance(offset);
@@ -79,7 +112,7 @@ export async function liveSequence(db) {
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) return;
-      out.push(cursor.value.entryKey);
+      if (!isHidden(cursor.value.entryKey)) out.push(cursor.value.entryKey);
       cursor.continue();
     };
     request.onerror = () => reject(request.error);
@@ -91,7 +124,7 @@ export async function liveSequence(db) {
     if (key.indexOf(NETWORK_PREFIX) !== 0) sequence.push(key);
     else {
       const network = await getEntry(db, key).catch(() => null);
-      (network ? network.memberKeys || [] : []).forEach((member) => sequence.push(member));
+      visibleKeys(network ? network.memberKeys || [] : []).forEach((member) => sequence.push(member));
     }
   }
   return sequence;
@@ -109,12 +142,14 @@ export function neighborKey(sequence, key, delta, groupKey = null) {
 
 /** The networks of Live TV, alphabetical: [{ key, name, icon, memberKeys, manualKeys, channelCount }]. */
 export async function listNetworks(db) {
-  const all = await requestToPromise(db.transaction('groups', 'readonly').objectStore('groups').getAll(IDBKeyRange.bound(NETWORK_PREFIX, `${NETWORK_PREFIX}\uffff`)));
+  let all = await requestToPromise(db.transaction('groups', 'readonly').objectStore('groups').getAll(IDBKeyRange.bound(NETWORK_PREFIX, `${NETWORK_PREFIX}\uffff`)));
+  if (hidden) all = all.filter((n) => !hidden.has(n.key)).map((n) => ({ ...n, memberKeys: visibleKeys(n.memberKeys || []) }));
   return all.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
 /** One grid entry by key (`movie:t603`, `series:i12`...). */
 export async function getEntry(db, key) {
+  if (isHidden(key)) return undefined; // as if it were not in the catalog
   const store = storeOf(key);
   return requestToPromise(db.transaction(store, 'readonly').objectStore(store).get(key));
 }
@@ -176,7 +211,7 @@ export async function genreEntryKeys(db, type, genreKey) {
   );
   const byKey = new Map();
   lists.forEach((rows) => rows.forEach((row) => byKey.set(row.entryKey, row.added)));
-  return Array.from(byKey.keys()).sort((a, b) => byKey.get(b) - byKey.get(a) || (a < b ? -1 : 1));
+  return visibleKeys(Array.from(byKey.keys())).sort((a, b) => byKey.get(b) - byKey.get(a) || (a < b ? -1 : 1));
 }
 
 /** Titles per genre key of one type (both sources, no duplicates): Map(genreKey → count). */
@@ -186,7 +221,7 @@ export async function genreCounts(db, type) {
   const sets = new Map();
   lists.forEach((rows) =>
     rows.forEach((row) => {
-      if (!row.genreKey) return;
+      if (!row.genreKey || isHidden(row.entryKey)) return;
       if (!sets.has(row.genreKey)) sets.set(row.genreKey, new Set());
       sets.get(row.genreKey).add(row.entryKey);
     }),
@@ -200,6 +235,21 @@ export function countEntries(db, { type, categoryId = null }) {
   const store = useCategory ? 'entry_cat' : 'entries';
   const index = db.transaction(store, 'readonly').objectStore(store).index(useCategory ? 'byCatAdded' : 'byTypeAdded');
   const range = useCategory ? IDBKeyRange.bound([type, String(categoryId), 0], [type, String(categoryId), MAX_ADDED]) : IDBKeyRange.bound([type, 0], [type, MAX_ADDED]);
-  return requestToPromise(index.count(range));
+  if (!hidden) return requestToPromise(index.count(range));
+  // Something hidden: the visible rows counted one by one.
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    const request = index.openCursor(range);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve(count);
+        return;
+      }
+      if (!hidden.has(useCategory ? cursor.value.entryKey : cursor.value.key)) count += 1;
+      cursor.continue();
+    };
+  });
 }
 

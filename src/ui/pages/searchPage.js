@@ -7,7 +7,7 @@ import { createTypedRows } from '../components/typedRows.js';
 import { SEARCH_BAR_ZONE } from '../components/topbar.js';
 import { createSkeletonCard } from '../components/card.js';
 import { collectionEntry } from '../../services/collections.js';
-import { getEntry } from '../../services/catalogQuery.js';
+import { getEntry, isHidden } from '../../services/catalogQuery.js';
 import { log } from '../../core/logger.js';
 import { formatClockTime } from '../../core/clock.js';
 import { FocusZone } from '../focus/FocusManager.js';
@@ -145,7 +145,8 @@ export function createSearchPage(ctx, params = {}) {
     skeleton.style.display = '';
     running = true;
     try {
-      const found = query.length < 2 ? [] : await ctx.search.search(query, { limit: PER_TYPE * 6 });
+      // A kids profile: adult titles are never among the results.
+      const found = query.length < 2 ? [] : (await ctx.search.search(query, { limit: PER_TYPE * 6 })).filter((row) => !isHidden(row.key));
       if (query.length >= 2 && ctx.collections) found.push(...(await matchingCollections(query)));
       if (query.length >= 2) found.push(...(await matchingProgrammes(query).catch(() => [])));
       if (destroyed || mine !== token) return;

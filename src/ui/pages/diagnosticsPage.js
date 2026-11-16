@@ -17,6 +17,7 @@ import { ensureVisible } from '../scroll.js';
 import { dbGet } from '../../core/idb.js';
 import { NETWORK_REPORT_KEY } from '../../services/catalogSync.js';
 import { formatNetworkReport } from '../../services/liveNetworks.js';
+import { standardNavigation } from './templates.js';
 
 const ZONE_ID = 'diagnostics';
 
@@ -133,7 +134,10 @@ export function createDiagnosticsPage(ctx) {
     },
   });
 
+  const nav = standardNavigation(ctx, { zone: ZONE_ID }); // the standard page template: Up from the first line to the bar, Down back
+
   return {
+    enterFromBar: nav.enterFromBar,
     el: framedPage(
       subtitleOverlay,
       createHeading({ level: 1, text: t('settings.diagnostics') }),
@@ -144,6 +148,7 @@ export function createDiagnosticsPage(ctx) {
     ),
     mount() {
       ctx.focus.register(zone);
+      nav.link();
       ctx.focus.focus(ZONE_ID, 0);
       renderLog();
       logBox.scrollTop = logBox.scrollHeight;

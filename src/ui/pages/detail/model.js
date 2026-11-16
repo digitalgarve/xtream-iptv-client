@@ -37,11 +37,13 @@ export const episodesLabel = (count) => t('detail.episodes', { count });
  * Line under the title: year, rating, then duration (movies) or seasons + episodes (series).
  * Returns [{ kind: 'text' | 'rating', text }] so the rating can get its star icon.
  */
-export function detailMetaParts({ type, year, rating, runtime, seasons, episodes }) {
+export function detailMetaParts({ type, year, rating, runtime, seasons, episodes, providers = [] }) {
   const parts = [];
   if (year) parts.push({ kind: 'text', text: String(year) });
   const stars = formatRating(rating);
   if (stars) parts.push({ kind: 'rating', text: stars });
+  // The providers that have the title (only given with several active), right after the rating.
+  if (providers.length) parts.push({ kind: 'text', text: providers.join(', ') });
   if (type === 'movie') {
     const text = formatRuntime(runtime);
     if (text) parts.push({ kind: 'text', text });

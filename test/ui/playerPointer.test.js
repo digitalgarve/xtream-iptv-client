@@ -76,3 +76,22 @@ test('the Back button before the title goes back', async () => {
   expect(ctx.back).toHaveBeenCalled();
   page.destroy();
 });
+
+test('Right with the controls hidden moves the pointer and waits for the last key, every time (never a jump at once)', async () => {
+  jest.useFakeTimers({ doNotFake: ['nextTick'] });
+  const { page, engine } = open();
+  await jest.advanceTimersByTimeAsync(1300);
+  for (let round = 0; round < 2; round += 1) {
+    await jest.advanceTimersByTimeAsync(6000); // the controls fade out (the earlier move applied long before)
+    expect(page.el.querySelector('.player-controls').classList.contains('visible')).toBe(false);
+    const before = engine.seekTo.mock.calls.length;
+    page.onAction('right');
+    expect(page.el.querySelector('.player-seek').classList.contains('scrubbing')).toBe(true);
+    expect(engine.seekTo.mock.calls.length).toBe(before);
+    await jest.advanceTimersByTimeAsync(2100);
+    expect(engine.seekTo.mock.calls.length).toBe(before + 1);
+    expect(engine.seekTo.mock.calls[before][0]).toBe(130000); // 100 s + 30 s
+  }
+  page.destroy();
+  jest.useRealTimers();
+});

@@ -2,7 +2,7 @@ import { openProviderDb } from '../../src/db/providerDb.js';
 import { dbPutMany } from '../../src/core/idb.js';
 import { writeEntries } from '../../src/services/catalogSync.js';
 import { buildEntries } from '../../src/services/grouping.js';
-import { listCategories, pageEntries, liveSequence, neighborKey, LIVE_ALL } from '../../src/services/catalogQuery.js';
+import { listCategories, pageEntries, liveSequence, neighborKey, LIVE_ALL, setHidden, getEntry, countEntries, isHidden } from '../../src/services/catalogQuery.js';
 
 let counter = 0;
 
@@ -73,4 +73,29 @@ test('previous / next channel walk "show all" with the networks opened up, a gro
   expect(neighborKey(sequence, 'live:i2', 1)).toBe('live:i7');
   expect(neighborKey(sequence, 'live:i50', 1, 'live:gRai')).toBe('live:i1'); // a version of a group
   expect(neighborKey(sequence, 'live:i50', 1)).toBe(null);
+});
+
+test('a kids profile: hidden titles and categories are left out of every read (pages, offsets, counts, single reads)', async () => {
+  const db = await seed();
+  const all = (await pageEntries(db, { type: 'movie', offset: 0, limit: 30 })).entries;
+  const byId = new Map(all.map((e) => [e.defaultId, e.key]));
+  setHidden({ keys: new Set([byId.get(25), byId.get(23), byId.get(20)]), categories: new Set(['movie:2']) });
+  try {
+    const first = await pageEntries(db, { type: 'movie', offset: 0, limit: 3 });
+    expect(first.entries.map((e) => e.defaultId)).toEqual([24, 22, 21]);
+    const second = await pageEntries(db, { type: 'movie', offset: 3, limit: 3 });
+    expect(second.entries.map((e) => e.defaultId)).toEqual([19, 18, 17]);
+    expect(await countEntries(db, { type: 'movie' })).toBe(22);
+    const odd = await pageEntries(db, { type: 'movie', categoryId: '1', offset: 0, limit: 3 });
+    expect(odd.entries.map((e) => e.defaultId)).toEqual([21, 19, 17]);
+    expect(await countEntries(db, { type: 'movie', categoryId: '1' })).toBe(11);
+    expect(await getEntry(db, byId.get(25))).toBeUndefined();
+    expect((await getEntry(db, byId.get(24))).defaultId).toBe(24);
+    expect(isHidden(byId.get(23))).toBe(true);
+    expect((await listCategories(db, 'movie')).map((c) => c.name)).toEqual(['Azione']);
+    expect((await listCategories(db, 'movie', { all: true })).map((c) => c.name)).toEqual(['Azione', 'Zeta']);
+  } finally {
+    setHidden(null);
+  }
+  expect(await countEntries(db, { type: 'movie' })).toBe(25);
 });

@@ -19,6 +19,10 @@ test('meta line: series shows year, rating, seasons, episodes (singular/plural)'
   expect(episodesLabel(1)).toBe('1 episode');
 });
 
+test('meta line: the providers of the title come right after the rating', () => {
+  expect(detailMetaParts({ type: 'movie', year: 1999, rating: 8.4, runtime: 136, providers: ['A', 'B'] }).map((p) => p.text)).toEqual(['1999', '8.4', 'A, B', '2h 16m']);
+});
+
 test('meta line skips what is missing; live shows nothing extra', () => {
   expect(detailMetaParts({ type: 'movie', year: null, rating: 0, runtime: null })).toEqual([]);
   expect(detailMetaParts({ type: 'live', year: 2020, rating: 5, runtime: 90 }).map((p) => p.text)).toEqual(['2020', '5.0']);

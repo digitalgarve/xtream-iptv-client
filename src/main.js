@@ -51,7 +51,7 @@ import { summarizeWatch, watchStatus } from './services/watchStatus.js';
 import { platform } from './platform/index.js';
 import { createSyncLog } from './services/syncLog.js';
 import { createOperations } from './services/operations.js';
-import { countEntries, getEntry } from './services/catalogQuery.js';
+import { countEntries, getEntry, setHidden } from './services/catalogQuery.js';
 import { continueWatching } from './services/continueWatching.js';
 import { isEmptySeries, markUnavailable } from './services/unavailable.js';
 import { createGenreIndex } from './services/genreIndex.js';
@@ -202,11 +202,18 @@ async function boot() {
     ctx.search.invalidate();
     queueSearchWarm();
   };
-  ctx.parental = createParentalService({ db: pdb });
+  ctx.parental = createParentalService({ db: pdb, appDb: db });
   setAdultCheck((entry) => ctx.parental.isAdult(entry));
+  /** The adult categories and the marks of the active provider; a kids profile also gets what it must not see removed from every read. */
   ctx.refreshAdult = async () => {
     const current = await active.get();
-    if (current) await ctx.parental.loadCategories(current.db).catch((err) => log.warn('Adult categories failed', err && err.message));
+    if (!current) return;
+    try {
+      await ctx.parental.loadCategories(current.db, current.provider.id);
+      if (ctx.profile.kids) setHidden(await ctx.parental.hiddenFor(current.db));
+    } catch (err) {
+      log.warn('Adult categories failed', err && err.message);
+    }
   };
   ctx.apiKeys = createApiKeys({ db });
   const keysReady = ctx.apiKeys.load(); // read while the rest of the start-up is set up; awaited before the first page
@@ -549,7 +556,8 @@ async function boot() {
     if (!state.running) endCatalogOp();
     if (wasSyncing && !state.running && !state.cancelled) {
       ctx.catalogChanged(); // caches emptied and the new search index ready before the next search
-      ctx.refreshAdult();
+      // A kids profile: what it must not see is worked out again on the new catalog, then the pages read it again.
+      ctx.refreshAdult().then(() => ctx.profile.kids && ctx.catalogChanged());
       queue.add({ name: 'share-keys', priority: Priority.METADATA, run: () => ctx.shareKeys().catch(() => undefined) });
       queue.add({ name: 'genres', priority: Priority.METADATA, run: () => ctx.genres.backfill().catch(() => undefined) }); // the genre worker finds genres the lists did not carry
       ctx.titleInfo.run(); // titles listed without a TMDB id: their details, in their own worker (not in the queue: it can take long)

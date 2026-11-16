@@ -5,6 +5,9 @@ import { FocusManager } from '../../src/ui/focus/FocusManager.js';
 import { createBrowsePage } from '../../src/ui/pages/browsePage.js';
 import { createPinsService } from '../../src/services/pins.js';
 import { createFavoritesService } from '../../src/services/favorites.js';
+import { derivedVersion, writeDerived } from '../../src/services/derivedStore.js';
+import { setHidden } from '../../src/services/catalogQuery.js';
+import { i18n } from '../../src/i18n/index.js';
 import { createNavCounts } from '../../src/services/navCounts.js';
 
 Element.prototype.scrollIntoView = () => undefined;
@@ -239,4 +242,39 @@ test('returning to the category restores the playing channel beyond the loaded w
     expect(ctx.focus.active.index).toBe(25);
     expect(preview.select).toHaveBeenLastCalledWith(later, 'auto', { categoryId: '1', offset: 25 });
   } finally { page.destroy(); create.mockRestore(); }
+});
+
+
+test('sidebar caches do not cross adult and kids visibility or retain old parental marks', async () => {
+  const { ctx, db } = await setup('browse-parental-sidebar-cache');
+  ctx.genres = { list: async () => [], counts: async () => new Map() };
+  const version = await derivedVersion(db, { genres: true, locale: i18n.getLocale() });
+  // A previous app version could have saved a child's filtered sidebar under the shared key.
+  await writeDerived(db, 'sidebar:p:movie', { categories: [{ id: '1', name: 'Action' }], networks: [], genres: [], counts: [['all:', 2]] }, version);
+  let page;
+  async function open(kids, hiddenCategory = null) {
+    if (page) page.destroy();
+    ctx.profile = { kids };
+    ctx.pageCache = new Map(); // Switching profiles reloads the app.
+    setHidden(hiddenCategory ? { categories: new Set([`movie:${hiddenCategory}`]), keys: new Set(hiddenCategory === '2' ? ['movie:i3'] : ['movie:i1', 'movie:i2']) } : null);
+    page = createBrowsePage(ctx, { type: 'movie', section: 'movies', filter: { kind: 'category', id: '1' } });
+    page.mount();
+    await tick(150);
+    return Array.from(page.el.querySelectorAll('.browse-cat-name'), (el) => el.textContent);
+  }
+  try {
+    expect(await open(false)).toEqual(expect.arrayContaining(['Action', 'Drama']));
+    const kids = await open(true, '2');
+    expect(kids).toContain('Action');
+    expect(kids).not.toContain('Drama');
+    // A later kids session must use the new classification, not its previous persisted result.
+    const changed = await open(true, '1');
+    expect(changed).not.toContain('Action');
+    expect(changed).toContain('Drama');
+    expect(await open(false)).toEqual(expect.arrayContaining(['Action', 'Drama']));
+  } finally {
+    if (page) page.destroy();
+    setHidden(null);
+    db.close();
+  }
 });

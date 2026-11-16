@@ -12,6 +12,7 @@ import { FocusZone } from '../focus/FocusManager.js';
 import { ensureVisible } from '../scroll.js';
 import { log } from '../../core/logger.js';
 import { openProviderDialog } from './providerSetupPage.js';
+import { standardNavigation } from './templates.js';
 
 const ZONE_ID = 'providers';
 export const ProviderAction = Object.freeze({ USE: 'use', CATEGORIES: 'categories', EDIT: 'edit', FORMAT: 'liveFormat', REMOVE: 'remove', ADD: 'add', REFRESH_LISTS: 'refreshLists', REMOVE_LISTS: 'removeLists' });
@@ -148,8 +149,8 @@ export function createProvidersPage(ctx, params = {}) {
         );
         const refresh = mine.find(({ c }) => c.action === ProviderAction.REFRESH_LISTS);
         const remove = mine.find(({ c }) => c.action === ProviderAction.REMOVE_LISTS);
-        // Attached to the row of an active provider: the table of its downloaded lists.
-        list.appendChild(on && refresh && remove ? h('div', { class: 'provider-block' }, row, providerTable(provider, nodes[refresh.i], nodes[remove.i]).el) : row);
+        // One model for every provider: the row and, attached under it, the table of its downloaded lists, shown only while it is active.
+        list.appendChild(h('div', { class: `provider-block${on ? '' : ' inactive'}` }, row, on && refresh && remove ? providerTable(provider, nodes[refresh.i], nodes[remove.i]).el : null));
       });
       list.appendChild(nodes[nodes.length - 1]);
       fillTables().catch(() => undefined);
@@ -259,13 +260,17 @@ export function createProvidersPage(ctx, params = {}) {
     },
   });
 
+  const nav = standardNavigation(ctx, { zone: ZONE_ID, hasLines: () => cells.length > 0 });
+
   return {
     el: h('section', { class: 'page framed providers' }, h('div', { class: 'page-container' }, createHeading({ level: 1, text: t('nav.provider') }), list)),
     mount() {
       ctx.focus.register(zone);
+      nav.link(); // the standard page template: Up from the first line to the bar, Down from it back
       // Opens on the provider list: the first thing to do here is pick or edit a provider.
       render(params.focusIndex || 0);
     },
+    enterFromBar: nav.enterFromBar,
     destroy() {
       destroyed = true;
       ctx.focus.unregister(ZONE_ID);

@@ -442,5 +442,12 @@
   "providers.count.liveCategories": "Live TV categories",
   "providers.count.updated": "Last update",
   "detail.providers": "Provider",
-  "notice.started": "Started"
+  "notice.started": "Started",
+  "settings.liveView": "Live TV view",
+  "settings.liveView.list": "Channel list with preview",
+  "settings.liveView.grid": "Tiles",
+  "livePreview.select": "Select a channel",
+  "livePreview.noEpg": "No programme information available",
+  "livePreview.help": "OK: full screen · Hold OK: channel details",
+  "livePreview.unavailable": "Preview unavailable for this channel"
 }

@@ -15,7 +15,7 @@ import { ensureVisible, revealNearest } from '../scroll.js';
 
 /** The page moves because of the pointer (wheel, finger, scrollbar), not because a key moved the focus. */
 const scrollHeldByUser = () => typeof document !== 'undefined' && document.body.classList.contains('pointer-mode');
-import { listCategories, listNetworks, pageEntries, getEntry, countEntries, LIVE_ALL } from '../../services/catalogQuery.js';
+import { listCategories, listNetworks, pageEntries, getEntry, countEntries, liveSequence, LIVE_ALL } from '../../services/catalogQuery.js';
 import { readGuideIndex } from '../../services/guideIndex.js';
 import { genreKey } from '../../services/epgChannels.js';
 import { formatNumber } from '../../core/format.js';
@@ -29,13 +29,16 @@ const GRID_ZONE = 'browseGrid';
 const GUIDE_ZONE = 'browseGuide';
 const HEAD_ZONE = 'browseHead';
 import { SIDEBAR_ICON, GENRE_SKELETONS, LIST_KINDS, CACHED_KINDS, columnsFor, PREFETCH_ROWS, DEFAULT_SCREEN_ROWS, BATCH_ROWS, firstKeptRow, wantedCount, createGrowingGridModel, sidebarItems, indexOfFilter, isGuideKind } from './browse/model.js';
+import { createLivePreview } from '../components/livePreview.js';
 import { TOPBAR_ZONE } from '../components/topbar.js';
 
 export { SIDEBAR_ICON, GENRE_SKELETONS, columnsFor, PREFETCH_ROWS, firstKeptRow, wantedCount, createGrowingGridModel, sidebarItems, indexOfFilter };
 
 export function createBrowsePage(ctx, params = {}) {
   const type = params.type;
-  const columns = columnsFor(type);
+  let columns = columnsFor(type);
+  let liveList = false;
+  let preview = null;
   const titleEl = h('span', { class: 'browse-title' });
   const count = h('span', { class: 'muted browse-count' });
   const sepA = h('span', { class: 'browse-sep', text: '·' });
@@ -222,7 +225,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The numbers of the catalog (all, networks, genres, categories): one source at a time, none of them blocks the page. Resolves true when all were read. */
   async function loadCatalogCounts() {
-    await safe(async () => setCount('all:', await countEntries(db, { type, categoryId: allCategory() })));
+    await safe(async () => setCount('all:', liveList ? (await liveSequence(db)).length : await countEntries(db, { type, categoryId: allCategory() })));
     if (type === 'live') networks.forEach((n) => setCount(`network:${n.key}`, n.memberKeys.length));
     else {
       const genreTotals = await safe(() => ctx.genres.counts(type));
@@ -250,7 +253,7 @@ export function createBrowsePage(ctx, params = {}) {
   }
   let sidebarVersion = null; // read before the sidebar is worked out: a sync meanwhile leaves the saved copy invalid
 
-  const sidebarKey = () => `sidebar:${providerId}:${type}`;
+  const sidebarKey = () => `sidebar:${providerId}:${type}${liveList ? ':list' : ''}`;
 
   let suggestionsCache = null;
   async function suggestionEntries(fresh = false) {
@@ -298,8 +301,9 @@ export function createBrowsePage(ctx, params = {}) {
   /** Cards for entries added at the end of the grid (the placeholders of the next row go). */
   function appendCards(added) {
     gridEl.querySelectorAll('.skeleton-more').forEach((node) => node.remove());
-    const made = added.map((entry) => {
+    const made = added.map((entry, i) => {
       const card = createCard(entry, type, { ...(isFilterEntry(entry) ? filterCardMeta(entry) : {}), square: type === 'live' });
+      if (liveList) card.el.insertBefore(h('span', { class: 'live-channel-number', text: String(cards.length + i + 1) }), card.el.firstChild);
       gridEl.appendChild(card.el);
       return card;
     });
@@ -382,6 +386,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** Entries of the views that are not a plain catalog walk. */
   async function loadList(item) {
+    if (liveList && item.kind === 'all') return byKeys(await liveSequence(db));
     if (item.kind === 'continue') {
       const recent = await continueWatching(ctx, { providerId, limit: 200 });
       return byKeys(recent.filter((r) => r.type === type).map((r) => r.entryKey));
@@ -416,7 +421,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The next `count` entries of the view (from the in-memory list or the catalog). */
   async function readEntries(item, offset, count) {
-    if (LIST_KINDS.includes(item.kind)) {
+    if (LIST_KINDS.includes(item.kind) || (liveList && item.kind === 'all')) {
       if (!list) list = await loadList(item).catch(() => []); // read once per view, on the first cards that need it
       return { entries: list.slice(offset, offset + count), hasMore: list.length > offset + count };
     }
@@ -512,14 +517,18 @@ export function createBrowsePage(ctx, params = {}) {
   /** Shows the grid of the selected sidebar entry from its first cards; the focus goes to `focusIndex` when given. */
   async function loadView(focusIndex) {
     const token = (loadToken += 1);
+    if (preview) { preview.stop(); preview.el.style.display = ''; }
     moreJob = null;
     const item = items[selected] || items[0];
     if (isGuideKind(item.kind)) {
+      if (preview) preview.el.style.display = 'none';
+      pageEl.classList.remove('live-list');
       await showGuide(typeof focusIndex === 'number');
       handOff();
       return;
     }
     hideGuide();
+    pageEl.classList.toggle('live-list', liveList);
     if (!entries.length) {
       // Nothing on screen yet: pulsing placeholders instead of an empty page.
       while (gridEl.firstChild) gridEl.removeChild(gridEl.firstChild);
@@ -528,7 +537,7 @@ export function createBrowsePage(ctx, params = {}) {
     }
     // The first cards of a catalog view (all, a category, a genre, a network) are cached; the views the user fills are not.
     const firstCount = wantedCount(0, columns);
-    const cacheKey = ctx.pageCache && CACHED_KINDS.includes(item.kind) ? `view:${providerId}:${type}:${item.kind}:${item.id === undefined ? '' : item.id}:${firstCount}` : null;
+    const cacheKey = ctx.pageCache && CACHED_KINDS.includes(item.kind) ? `view:${liveList ? 'list' : 'grid'}:${providerId}:${type}:${item.kind}:${item.id === undefined ? '' : item.id}:${firstCount}` : null;
     const hit = cacheKey ? ctx.pageCache.get(cacheKey) : null;
     list = null; // the list views read their list again (on the first cards they need past the cached ones)
     const result = hit ? { entries: hit.entries, hasMore: hit.hasMore } : await readEntries(item, 0, firstCount);
@@ -813,7 +822,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The main grid of the page: the guide for Live TV, "show all" for the others. */
   const mainIndex = () => {
-    const at = items.findIndex((item) => item.kind === (type === 'live' ? 'guide' : 'all'));
+    const at = items.findIndex((item) => item.kind === (type === 'live' && !liveList ? 'guide' : 'all'));
     return at >= 0 ? at : items.findIndex((item) => item.kind === 'all'); // no guide: "show all"
   };
 
@@ -828,6 +837,7 @@ export function createBrowsePage(ctx, params = {}) {
     }),
     onFocus: (i) => {
       if (!cardNodes[i]) return;
+      if (preview) preview.select(entries[i], timeFormat);
       syncImages(i); // first: a far jump (back to a title, the top) brings its rows into the page before scrolling to it
       cardNodes[i].classList.add('focused');
       ensureVisible(cardNodes[i], { first: i < columns });
@@ -840,10 +850,13 @@ export function createBrowsePage(ctx, params = {}) {
         openFilter(ctx, entries[i], { push: true });
         return;
       }
+      if (preview && preview.activate(entries[i])) return;
       const item = items[selected];
       ctx.openEntry(entries[i], { section: params.section, live: { categoryId: item && item.kind === 'all' ? allCategory() : item && item.kind === 'category' ? item.id : null, offset: i } });
     },
   });
+
+  gridZone.onLongActivate = (i) => { if (entries[i]) ctx.openEntry(entries[i], { section: params.section }); };
 
   let restored = null; // state saved when the page was left (set right after mount, read by init)
   let timeFormat = 'auto';
@@ -855,7 +868,20 @@ export function createBrowsePage(ctx, params = {}) {
     providerId = current.provider.id;
     providerNames = new Map((current.sources || []).map((s) => [s.slot, s.provider.name]));
     const prefs = await ctx.settings.get();
+    if (destroyed) return;
     timeFormat = prefs.timeFormat || 'auto';
+    liveList = type === 'live' && prefs.liveView === 'list';
+    if (liveList) {
+      columns = 1;
+      gridZone.model = createGrowingGridModel({ columns, getCount: () => entries.length, hasMore: () => hasMore, more: () => loadMore(BATCH_ROWS) });
+      preview = createLivePreview(ctx, { onChannelChange: async (entry) => {
+        const index = (list || entries).findIndex((row) => row.key === entry.key);
+        if (index < 0) return;
+        await loadUntil(index);
+        if (!destroyed) ctx.focus.focus(GRID_ZONE, index);
+      } });
+      pageEl.appendChild(preview.el);
+    }
     const excluded = await ctx.settings.getExcluded(providerId, type);
     pinned = await ctx.pins.list(providerId, type).catch(() => []);
     // Seen before (and the catalog has not changed since): categories, genres, networks and their numbers come from the cache.
@@ -890,7 +916,7 @@ export function createBrowsePage(ctx, params = {}) {
       genresExpanded = back.genresExpanded;
       if (back.epgGenresExpanded !== undefined) epgGenresExpanded = back.epgGenresExpanded;
     }
-    const filter = back ? back.item : params.filter || null;
+    const filter = back ? back.item : params.filter || (liveList ? { kind: 'all' } : null);
     userHidden = new Set(USER_KINDS.filter((kind) => !(filter && filter.kind === kind)));
     // The entries that had something last time are there at once, with that number (corrected when it is read again).
     USER_KINDS.forEach((kind) => {
@@ -996,7 +1022,9 @@ export function createBrowsePage(ctx, params = {}) {
     enterFromBar: () => items.length > 0 && ctx.focus.focus(CATS_ZONE, 0),
     el: pageEl,
     /** Back: a selected row of the guide lets go; from the grid / guide the focus goes to the sidebar; then the main entry; then the page is left. */
+    onAction: (action) => preview ? preview.onAction(action) : false,
     onBack() {
+      if (preview && preview.onBack()) return true;
       if (guide && guide.cancelRowMode()) return true;
       // From the grid, the guide or the head: Back goes to the sidebar first (on the page's entry), the page is left from there.
       const inPage = ctx.focus.activeId === GRID_ZONE || ctx.focus.activeId === GUIDE_ZONE || ctx.focus.activeId === HEAD_ZONE;
@@ -1063,6 +1091,7 @@ export function createBrowsePage(ctx, params = {}) {
     },
     destroy() {
       destroyed = true;
+      if (preview) preview.destroy();
       if (guide) guide.destroy();
       if (stopGuideUpdates) stopGuideUpdates();
       if (stopScheduleUpdates) stopScheduleUpdates();

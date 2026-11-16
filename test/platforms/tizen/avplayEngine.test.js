@@ -86,3 +86,20 @@ test('audio selection reports AVPlay success and failure to the caller', () => {
   setSelectTrack.mockImplementation(() => { throw new Error('InvalidStateError'); });
   expect(engine.setAudioTrack(3)).toBe(false);
 });
+
+test('preview rectangle survives stream changes and expands without reopening AVPlay', () => {
+  const api = { open: jest.fn(), setDisplayRect: jest.fn(), prepareAsync: jest.fn(), setListener: jest.fn(), setBufferingParam: jest.fn(), stop: jest.fn(), close: jest.fn() };
+  global.webapis = { avplay: api };
+  const engine = createAvPlayEngine();
+  const small = { x: 1210, y: 225, width: 650, height: 366 };
+  engine.setDisplayRect(small);
+  engine.start('https://example.test/1.ts', { bufferSeconds: 5, handlers: {} });
+  expect(api.setDisplayRect).toHaveBeenLastCalledWith(1210, 225, 650, 366);
+  engine.setDisplayRect({ x: 0, y: 0, width: 1920, height: 1080 });
+  expect(api.open).toHaveBeenCalledTimes(1);
+  expect(api.setDisplayRect).toHaveBeenLastCalledWith(0, 0, 1920, 1080);
+  engine.setDisplayRect(small);
+  engine.start('https://example.test/2.ts', { bufferSeconds: 5, handlers: {} });
+  expect(api.setDisplayRect).toHaveBeenLastCalledWith(1210, 225, 650, 366);
+  engine.stop();
+});

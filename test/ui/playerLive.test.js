@@ -332,3 +332,18 @@ test.each(['manual', 'automatic'])('a delayed %s audio switch cannot set the fal
     expect(ctx.dialogs.choose).toHaveBeenLastCalledWith(expect.objectContaining({ selected: 0 }));
   } finally { page.destroy(); }
 });
+
+test('a preview destroyed while settings load cannot start a stale stream', async () => {
+  const { page, ctx, engine } = await setup();
+  page.destroy();
+  engine.start.mockClear();
+  let resolve;
+  ctx.settings.get = () => new Promise((done) => { resolve = done; });
+  const preview = createPlayerPage(ctx, { type: 'live', entryKey: 'live:i1', title: 'Sky Uno', playlist: [{ id: 1, ext: '', title: '' }] });
+  preview.mount();
+  await wait();
+  preview.destroy();
+  resolve({ bufferSeconds: 5 });
+  await wait();
+  expect(engine.start).not.toHaveBeenCalled();
+});

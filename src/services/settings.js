@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   cleanTitles: true, // movie / series titles without year in brackets, [tags] and language prefixes ("IT: Inception (2010) [4K]" → "Inception")
   timeFormat: 'auto',
   dateFormat: 'auto',
+  liveView: 'list',
   liveGrouping: true, // Live TV: versions of the same channel shown as one
   liveNetworks: true, // Live TV: the channels of one broadcaster (Rai 1, Rai 2...) gathered in a network
   customEpgUrl: '', // XMLTV guide that replaces the provider's one (http / https); empty = the provider's
@@ -63,6 +64,7 @@ function sanitize(raw) {
     tmdbTitleSearch: typeof raw.tmdbTitleSearch === 'boolean' ? raw.tmdbTitleSearch : DEFAULT_SETTINGS.tmdbTitleSearch,
     timeFormat: pick(raw.timeFormat, TIME_FORMATS, DEFAULT_SETTINGS.timeFormat),
     dateFormat: pick(raw.dateFormat, DATE_FORMATS, DEFAULT_SETTINGS.dateFormat),
+    liveView: pick(raw.liveView, ['list', 'grid'], DEFAULT_SETTINGS.liveView),
     liveGrouping: typeof raw.liveGrouping === 'boolean' ? raw.liveGrouping : DEFAULT_SETTINGS.liveGrouping,
     liveNetworks: typeof raw.liveNetworks === 'boolean' ? raw.liveNetworks : DEFAULT_SETTINGS.liveNetworks,
     customEpgUrl: typeof raw.customEpgUrl === 'string' && isEpgUrl(raw.customEpgUrl) ? raw.customEpgUrl.trim() : '',

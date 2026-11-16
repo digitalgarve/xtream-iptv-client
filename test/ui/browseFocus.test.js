@@ -30,7 +30,7 @@ async function setup(name) {
     notices: { success: jest.fn() },
     openEntry: jest.fn(),
   };
-  return { ctx, refreshTopbar };
+  return { ctx, refreshTopbar, db };
 }
 
 
@@ -134,4 +134,30 @@ test('Up from the first sidebar entry: the top bar; Down from the bar (enterFrom
   expect(ctx.focus.activeId).toBe('browseCategories');
   expect(ctx.focus.active.index).toBe(0);
   page.destroy();
+});
+
+
+test('live list is one column, opens show all, and keeps the tile option', async () => {
+  const { ctx, db } = await setup('browse-live-list');
+  await syncType({ db, client: { getCategories: async () => [{ category_id: '1', category_name: 'TV' }], getStreams: async () => [film(1, '1'), film(2, '1'), film(3, '1')] }, type: 'live' });
+  ctx.settings.get = async () => ({ liveView: 'list' });
+  const page = createBrowsePage(ctx, { type: 'live', section: 'live', fromBar: true });
+  document.body.appendChild(page.el);
+  page.mount();
+  await tick(150);
+  expect(page.el.classList.contains('live-list')).toBe(true);
+  expect(catName(page, ctx)).toBe('Show all');
+  const zone = ctx.focus.zones.get('browseGrid');
+  expect(zone.model.navigate('down', 0)).toEqual({ type: 'move', index: 1 });
+  expect(page.el.querySelector('.live-channel-number').textContent).toBe('1');
+  expect(page.el.querySelector('.live-preview')).not.toBeNull();
+  page.destroy();
+  page.el.remove();
+  ctx.settings.get = async () => ({ liveView: 'grid' });
+  const tiles = createBrowsePage(ctx, { type: 'live', section: 'live' });
+  tiles.mount();
+  await tick(150);
+  expect(tiles.el.classList.contains('live-list')).toBe(false);
+  expect(tiles.el.querySelector('.live-preview')).toBeNull();
+  tiles.destroy();
 });

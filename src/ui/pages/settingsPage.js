@@ -523,7 +523,7 @@ export function createSettingsPage(ctx) {
     {
       // Channels: their grouping by quality, the words removed from their names to compare them, the custom guide.
       titleKey: 'settings.section.live',
-      parts: [{ list: [liveGrouping] }, { fields: [patternsRow, patternsClearRow] }, { fields: [epgRow, epgClearRow] }],
+      parts: [{ list: [optionRow({ ctx, labelKey: 'settings.liveView', key: 'liveView', options: ['list', 'grid'], format: (v) => t(`settings.liveView.${v}`) }), liveGrouping] }, { fields: [patternsRow, patternsClearRow] }, { fields: [epgRow, epgClearRow] }],
     },
     {
       // Networks: on / off, then how similar names must be; the toggle for the numbers sits right under the maximum difference.

@@ -442,5 +442,12 @@
   "providers.count.liveCategories": "Categorie live TV",
   "providers.count.updated": "Ultimo aggiornamento",
   "detail.providers": "Provider",
-  "notice.started": "Avviato"
+  "notice.started": "Avviato",
+  "settings.liveView": "Vista TV in diretta",
+  "settings.liveView.list": "Elenco canali con anteprima",
+  "settings.liveView.grid": "Riquadri",
+  "livePreview.select": "Seleziona un canale",
+  "livePreview.noEpg": "Informazioni sul programma non disponibili",
+  "livePreview.help": "OK: schermo intero · Tieni premuto OK: dettagli",
+  "livePreview.unavailable": "Anteprima non disponibile per questo canale"
 }

@@ -37,6 +37,23 @@ async function setup(name) {
 const active = (ctx) => `${ctx.focus.activeId}:${ctx.focus.active ? ctx.focus.active.index : ''}`;
 const catName = (page, ctx) => page.el.querySelectorAll('.browse-cat')[ctx.focus.active.index].querySelector('.browse-cat-name').textContent;
 
+test.each(['category', 'genre'])('long OK on a favourite %s opens its browse filter', async (kind) => {
+  const { Action } = await import('../../src/core/input.js');
+  const { ctx } = await setup(`browse-long-filter-${kind}`);
+  ctx.router = { push: jest.fn() };
+  await ctx.favorites.toggleFilter('p', { kind, type: 'movie', id: '1', name: 'Action' });
+  const page = createBrowsePage(ctx, { type: 'movie', section: 'movies', filter: { kind: 'favorites' } });
+  page.mount();
+  await tick(150);
+  ctx.focus.focus('browseGrid', 0);
+  ctx.focus.handle(Action.LONG_ENTER);
+  expect(ctx.router.push).toHaveBeenCalledWith('browse', {
+    type: 'movie', section: 'movies', filter: { kind, id: '1' },
+  });
+  expect(ctx.openEntry).not.toHaveBeenCalled();
+  page.destroy();
+});
+
 test('opened from the top bar: the focus goes to the sidebar entry of the page, not to the grid', async () => {
   const { ctx } = await setup('browse-focus-bar');
   const page = createBrowsePage(ctx, { type: 'movie', section: 'movies', fromBar: true });

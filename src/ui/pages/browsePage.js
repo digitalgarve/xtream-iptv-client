@@ -864,7 +864,11 @@ export function createBrowsePage(ctx, params = {}) {
     },
   });
 
-  gridZone.onLongActivate = (i) => { if (entries[i]) ctx.openEntry(entries[i], { section: params.section }); };
+  gridZone.onLongActivate = (i) => {
+    if (!entries[i]) return;
+    if (entries[i].filterKind) openFilter(ctx, entries[i], { push: true });
+    else ctx.openEntry(entries[i], { section: params.section });
+  };
 
   let restored = null; // state saved when the page was left (set right after mount, read by init)
   let timeFormat = 'auto';

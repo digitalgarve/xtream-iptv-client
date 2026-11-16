@@ -49,6 +49,7 @@ export function createAvPlayEngine() {
     return api && typeof api.open === 'function' && typeof api.setDisplayRect === 'function' && typeof api.prepareAsync === 'function' ? api : null;
   };
   let element = null;
+  let displayRect = { x: 0, y: 0, width: 1920, height: 1080 };
   let subtitlesOn = false; // a track is selected: its lines (onsubtitlechange) are drawn by the page
   let eventsLogged = 0;
   let textEvents = 0; // subtitle lines with text received since the track was chosen (Diagnostics)
@@ -56,7 +57,7 @@ export function createAvPlayEngine() {
   /** Opens `url` in AVPlay with the listener of the page's handlers. */
   function open(api, { url, bufferSeconds, handlers }) {
     api.open(url);
-    api.setDisplayRect(0, 0, 1920, 1080);
+    api.setDisplayRect(displayRect.x, displayRect.y, displayRect.width, displayRect.height);
     api.setListener({
       onbufferingstart: () => handlers.onBuffering(0),
       onbufferingprogress: (percent) => handlers.onBuffering(percent),
@@ -107,6 +108,10 @@ export function createAvPlayEngine() {
       this.stop();
       makeElement();
       open(api, { url, bufferSeconds, handlers });
+    },
+    setDisplayRect(rect) {
+      displayRect = rect;
+      if (element) av().setDisplayRect(rect.x, rect.y, rect.width, rect.height);
     },
     play: () => av().play(),
     pause: () => av().pause(),

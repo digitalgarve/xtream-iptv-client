@@ -671,6 +671,7 @@ export function createPlayerPage(ctx, params) {
       }
       if (destroyed || token !== loadToken) return;
       const { bufferSeconds, timeFormat: clockFormat, autoplayNext } = await ctx.settings.get();
+      if (destroyed || token !== loadToken) return;
       timeFormat = clockFormat || 'auto';
       updateSeriesButtons(autoplayNext).catch(() => undefined);
       streamUrl = client.streamUrl(params.type, current().id, current().ext);
@@ -753,6 +754,7 @@ export function createPlayerPage(ctx, params) {
   /** Plays another channel / group (or another version of this one, `memberId`): title, guide and buttons follow. */
   function switchTo(entry, memberId = null) {
     liveEntry = entry;
+    if (params.onChannelChange) params.onChannelChange(entry, live ? { ...live } : null);
     title = entry.name;
     params.entryKey = entry.key;
     params.icon = entry.icon;
@@ -961,6 +963,11 @@ export function createPlayerPage(ctx, params) {
 
   return {
     el,
+    setViewport(rect) {
+      if (!engine.setDisplayRect) return false;
+      engine.setDisplayRect(rect || { x: 0, y: 0, width: 1920, height: 1080 });
+      return true;
+    },
     /** Called by main.js before the focus manager: the player owns every key except Back. */
     onAction(action) {
       if (ctx.dialogs && ctx.dialogs.isOpen()) return false; // an open list (subtitles) takes the keys

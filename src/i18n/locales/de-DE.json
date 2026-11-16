@@ -442,5 +442,12 @@
   "settings.count.networks": "TV-Sendergruppen",
   "settings.unifiedRebuild": "Gemeinsamen Katalog neu aufbauen",
   "settings.unifiedRemove": "Gemeinsamen Katalog entfernen",
-  "settings.unifiedRemoveConfirm": "Der in der App angezeigte Katalog wird entfernt. Die heruntergeladenen Anbieterlisten bleiben erhalten, sodass der Katalog ohne erneutes Herunterladen neu aufgebaut werden kann."
+  "settings.unifiedRemoveConfirm": "Der in der App angezeigte Katalog wird entfernt. Die heruntergeladenen Anbieterlisten bleiben erhalten, sodass der Katalog ohne erneutes Herunterladen neu aufgebaut werden kann.",
+  "settings.liveView": "Live-TV-Ansicht",
+  "settings.liveView.list": "Senderliste mit Vorschau",
+  "settings.liveView.grid": "Kacheln",
+  "livePreview.select": "Sender auswählen",
+  "livePreview.noEpg": "Keine Programminformationen verfügbar",
+  "livePreview.help": "OK: Vollbild · Lange OK: Senderdetails",
+  "livePreview.unavailable": "Vorschau für diesen Sender nicht verfügbar"
 }

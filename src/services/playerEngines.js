@@ -66,6 +66,7 @@ async function attachMpegts(video, url, handlers) {
 export function createHtml5Engine({ demux = isDev() } = {}) {
   let video = null;
   let htmlHandlers = null;
+  let displayRect = { x: 0, y: 0, width: 1920, height: 1080 };
   let adapter = null; // hls.js / mpegts.js instance
   return {
     kind: 'html5',
@@ -76,6 +77,7 @@ export function createHtml5Engine({ demux = isDev() } = {}) {
       const url = devMediaUrl(rawUrl);
       video = document.createElement('video');
       video.style.cssText = 'position:fixed;left:0;top:0;width:1920px;height:1080px;z-index:-1;background:#000';
+      this.setDisplayRect(displayRect);
       video.addEventListener('canplay', () => handlers.onPrepared(), { once: true });
       video.addEventListener('waiting', () => handlers.onBuffering(0));
       video.addEventListener('playing', () => handlers.onBufferingDone());
@@ -96,6 +98,10 @@ export function createHtml5Engine({ demux = isDev() } = {}) {
       }
       video.src = url;
       video.load();
+    },
+    setDisplayRect(rect) {
+      displayRect = rect;
+      if (video) Object.assign(video.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
     },
     play: () => video.play(),
     pause: () => video.pause(),

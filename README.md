@@ -154,8 +154,8 @@ PC and the phone (and any other app that uses Trakt), and suggestions can be bas
 titles are aligned.
 
 1. Create a free account on [trakt.tv](https://trakt.tv).
-2. Open [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications) and press **New Application**: any name, `urn:ietf:wg:oauth:2.0:oob` as *Redirect uri*, the rest empty.
-3. Copy the **Client ID** and **Client Secret** into *Settings → Trakt*, press connect and scan the QR code (or open the address shown and type the code).
+2. Open [Trakt My Apps](https://developer.trakt.tv/apps), link your GitHub account and create a **Development** app for personal use. Set `urn:ietf:wg:oauth:2.0:oob` as its *Redirect URI* (also used by this player when refreshing tokens).
+3. Copy the **Client ID** into *Settings → Trakt*, press connect and scan the QR code (or open the address shown and type the code). No Client Secret is needed: the player uses Trakt’s device-code flow, with OAuth requests sent to `auth.trakt.tv`.
 
 ### OpenSubtitles: subtitles for any title
 

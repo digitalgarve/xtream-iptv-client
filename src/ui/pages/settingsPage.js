@@ -349,7 +349,6 @@ export function createSettingsPage(ctx) {
     },
   };
   const traktIdRow = textRow({ ctx, label: t('settings.traktId'), field: 'traktId' });
-  const traktSecretRow = textRow({ ctx, label: t('settings.traktSecret'), field: 'traktSecret', secret: true });
   const openSubtitlesRow = textRow({ ctx, label: t('settings.openSubtitlesKey'), field: 'openSubtitlesKey', secret: true });
 
   const pinValue = createRowValue();
@@ -645,7 +644,7 @@ export function createSettingsPage(ctx) {
     // Profiles right under General.
     ...sectionPages.filter((sub) => sub.id !== 'settings.section.advanced').reduce((out, sub) => out.concat(sub.id === 'settings.section.general' ? [sub, profilesPage] : [sub]), []),
     { id: 'tmdb', icon: 'info', label: 'TMDB', blocks: [tmdbPanel.el, h('div', { class: 'fields' }, tmdbTokenRow.root), h('div', { class: 'list' }, titleSearchRow.el)], rows: [...tmdbRows, tmdbTokenRow, tmdbTokenRow.clearRow, titleSearchRow] },
-    { id: 'trakt', icon: 'user', label: 'Trakt', blocks: [traktPanel.el, h('div', { class: 'fields' }, traktIdRow.root, traktSecretRow.root)], rows: [traktConnectRow, traktSyncRow, traktRemoveRow, traktIdRow, traktIdRow.clearRow, traktSecretRow, traktSecretRow.clearRow] },
+    { id: 'trakt', icon: 'user', label: 'Trakt', blocks: [traktPanel.el, h('div', { class: 'fields' }, traktIdRow.root)], rows: [traktConnectRow, traktSyncRow, traktRemoveRow, traktIdRow, traktIdRow.clearRow] },
     { id: 'opensubtitles', icon: 'subtitles', label: 'OpenSubtitles', blocks: [h('div', { class: 'fields' }, openSubtitlesRow.root)], rows: [openSubtitlesRow, openSubtitlesRow.clearRow] },
     ...advancedPage,
   ];

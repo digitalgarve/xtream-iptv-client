@@ -11,7 +11,7 @@ describe('api keys', () => {
     const keys = createApiKeys({ db: d });
     expect((await keys.load()).tmdbKey).toBe('');
     await keys.set({ tmdbKey: '  mine ', traktId: 'id' });
-    expect(keys.get()).toMatchObject({ tmdbKey: 'mine', traktId: 'id', traktSecret: '' });
+    expect(keys.get()).toMatchObject({ tmdbKey: 'mine', traktId: 'id' });
     const again = createApiKeys({ db: d });
     expect((await again.load()).tmdbKey).toBe('mine');
     await again.set({ tmdbKey: '' });

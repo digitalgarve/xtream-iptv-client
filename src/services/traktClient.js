@@ -1,12 +1,13 @@
 import { AppError, ErrorCode } from '../core/errors.js';
 
 const API = 'https://api.trakt.tv';
+const AUTH = 'https://auth.trakt.tv';
 
 /** Trakt REST wrapper (device-code OAuth + history). Without a client id the whole feature is off. */
-export function createTraktClient({ clientId = '', clientSecret = '', getCredentials = () => ({ clientId, clientSecret }), doFetch = (...args) => fetch(...args) } = {}) {
+export function createTraktClient({ clientId = '', getCredentials = () => ({ clientId }), doFetch = (...args) => fetch(...args) } = {}) {
   const isEnabled = () => {
     const c = getCredentials();
-    return Boolean(c.clientId && c.clientSecret);
+    return Boolean(c.clientId);
   };
 
   async function call(path, { method = 'GET', body, token } = {}) {
@@ -16,7 +17,7 @@ export function createTraktClient({ clientId = '', clientSecret = '', getCredent
     if (token) headers.Authorization = `Bearer ${token}`;
     let res;
     try {
-      res = await doFetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      res = await doFetch(`${path.startsWith('/oauth/') ? AUTH : API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
     } catch (cause) {
       throw new AppError(ErrorCode.NETWORK, 'Trakt unreachable', { cause });
     }
@@ -42,11 +43,11 @@ export function createTraktClient({ clientId = '', clientSecret = '', getCredent
     deviceCode: () => call('/oauth/device/code', { method: 'POST', body: { client_id: getCredentials().clientId } }),
     /** status 200 = token; 400 = pending; 429 = slow down; 404/409/410/418 = give up. */
     pollToken: (deviceCode) =>
-      call('/oauth/device/token', { method: 'POST', body: { code: deviceCode, client_id: getCredentials().clientId, client_secret: getCredentials().clientSecret } }),
+      call('/oauth/device/token', { method: 'POST', body: { code: deviceCode, client_id: getCredentials().clientId } }),
     refresh: (refreshToken) =>
       call('/oauth/token', {
         method: 'POST',
-        body: { refresh_token: refreshToken, client_id: getCredentials().clientId, client_secret: getCredentials().clientSecret, redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', grant_type: 'refresh_token' },
+        body: { refresh_token: refreshToken, client_id: getCredentials().clientId, redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', grant_type: 'refresh_token' },
       }),
     /** Signed-in user (username) for the settings page. */
     profile: (token) => call('/users/settings', { token }),

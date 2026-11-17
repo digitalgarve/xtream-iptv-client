@@ -31,3 +31,10 @@ export function formatClockDate(date, format = 'auto', locale = undefined) {
     return `${d}/${m}/${y}`;
   }
 }
+
+/** Local calendar day, including the 23/25-hour daylight-saving days. */
+export function dayBounds(ms = Date.now()) {
+  const start = new Date(ms); start.setHours(0, 0, 0, 0);
+  const end = new Date(start); end.setDate(end.getDate() + 1);
+  return { start: start.getTime(), end: end.getTime() };
+}

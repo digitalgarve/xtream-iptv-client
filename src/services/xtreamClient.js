@@ -150,6 +150,15 @@ export class XtreamClient {
   /** Returns [{ id, title, description, start, stop }] with epoch milliseconds. */
   async getShortEpg(streamId, limit = 10) {
     const data = await this.request('get_short_epg', { stream_id: streamId, limit }, { timeoutMs: 15000 });
+    return this.parseEpg(data);
+  }
+
+  /** All programme data supplied for this stream (not limited to the next ten listings). */
+  async getEpg(streamId) {
+    return this.parseEpg(await this.request('get_simple_data_table', { stream_id: streamId }, { timeoutMs: 15000 }));
+  }
+
+  parseEpg(data) {
     const listings = data && Array.isArray(data.epg_listings) ? data.epg_listings : [];
     return listings
       .map((l) => ({

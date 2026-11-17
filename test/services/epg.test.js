@@ -55,10 +55,10 @@ describe('syncEpg', () => {
 
   test('stores wanted programmes, drops stale rows and records meta', async () => {
     const db = await makeDb();
-    await dbPutMany(db, 'epg', [{ channelId: 'a', start: NOW - 7200000, stop: NOW - 3600000, title: 'Old' }]);
+    await dbPutMany(db, 'epg', [{ channelId: 'a', start: NOW - 7200000, stop: NOW - 3600000, title: 'Earlier today' }, { channelId: 'a', start: NOW - 48 * 3600000, stop: NOW - 24 * 3600000, title: 'Yesterday' }]);
     const meta = await syncEpg({ db, url: 'x', now: NOW, fetchImpl: guideFetch(xml) });
-    expect(meta).toMatchObject({ programmes: 2, channels: 1 });
-    expect((await dbGetAll(db, 'epg')).map((r) => r.title).sort()).toEqual(['Next', 'Now']);
+    expect(meta).toMatchObject({ programmes: 2, channels: 1 }); // two newly downloaded programmes; earlier today remains stored
+    expect((await dbGetAll(db, 'epg')).map((r) => r.title).sort()).toEqual(['Earlier today', 'Next', 'Now']);
   });
 
   test('the download stores the channel summary: the service reads channels and genres from it, and clear() deletes everything', async () => {
@@ -256,4 +256,101 @@ describe('programme search in the search worker', () => {
     programmeSearch.search = async () => null;
     expect(await svc.searchProgrammes('air')).toEqual([]); // the guide was cleared
   });
+});
+
+test('daily stream EPG is shared across requests and service instances, expires next day and is cleared explicitly', async () => {
+  const db = await openProviderDb('daily-epg-cache');
+  let time = new Date(2026, 10, 17, 12).getTime();
+  const full = jest.fn(async () => [{ title: 'Morning', start: time - 3 * 3600000, stop: time - 2 * 3600000 }, { title: 'Evening', start: time + 6 * 3600000, stop: time + 7 * 3600000 }]);
+  const active = { get: async () => ({ db, client: { getEpg: full } }) };
+  const options = { active, providers: {}, now: () => time };
+  const entry = { defaultId: 17, epgChannelId: null };
+  try {
+    const service = createEpgService(options);
+    const [first, second] = await Promise.all([service.dayProgrammes(entry), service.dayProgrammes(entry)]);
+    expect(first).toEqual(second); expect(first.map(p => p.title)).toEqual(['Morning', 'Evening']);
+    expect(full).toHaveBeenCalledTimes(1);
+    const reopened = createEpgService(options);
+    expect(await reopened.dayProgrammes(entry)).toEqual(first); expect(full).toHaveBeenCalledTimes(1);
+    time += 24 * 3600000;
+    await reopened.dayProgrammes(entry); expect(full).toHaveBeenCalledTimes(2);
+    await reopened.clear(); await reopened.dayProgrammes(entry); expect(full).toHaveBeenCalledTimes(3);
+  } finally { db.close(); }
+});
+
+test('failed EPG requests are retryable and empty schedules are cached briefly rather than for the entire day', async () => {
+  const db = await openProviderDb('daily-epg-retry');
+  let time = new Date(2026, 10, 17, 12).getTime();
+  const full = jest.fn(async () => []);
+  const short = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue([]);
+  const service = createEpgService({ active: { get: async () => ({ db, client: { getEpg: full, getShortEpg: short } }) }, providers: {}, now: () => time });
+  try {
+    await expect(service.dayProgrammes({ defaultId: 1 })).rejects.toThrow('offline');
+    await service.dayProgrammes({ defaultId: 1 }); expect(short).toHaveBeenCalledTimes(2);
+    await service.dayProgrammes({ defaultId: 1 }); expect(short).toHaveBeenCalledTimes(2);
+    time += 6 * 60000; await service.dayProgrammes({ defaultId: 1 }); expect(short).toHaveBeenCalledTimes(3);
+  } finally { db.close(); }
+});
+
+const waitFor = async (predicate) => {
+  for (let i = 0; i < 100 && !predicate(); i += 1) await new Promise(resolve => setTimeout(resolve, 5));
+  expect(predicate()).toBe(true);
+};
+async function backgroundDb(name, ids) {
+  const db = await openProviderDb(name);
+  await dbPutMany(db, 'entries', ids.map(id => ({ key: `live:i${id}`, type: 'live', added: id, defaultId: id, categoryIds: [String(id % 2)] })));
+  return db;
+}
+const dayListing = () => [{ title: 'Programme', start: Date.now() - 1000, stop: Date.now() + 3600000 }];
+
+test('background EPG warms all live categories and reuses the daily cache on repeated scans', async () => {
+  const db = await backgroundDb('epg-all-cache', [1, 2, 3, 4]);
+  const full = jest.fn(async () => dayListing()); const client = { getEpg: full };
+  const service = createEpgService({ active: { get: async () => ({ db, client }) }, providers: {} });
+  try {
+    await service.dayProgrammes({ defaultId: 1 });
+    await Promise.all([service.prefetchAll(), service.prefetchAll()]);
+    expect(full.mock.calls.map(args => args[0]).sort()).toEqual([1, 2, 3, 4]);
+    await service.prefetchAll(); expect(full).toHaveBeenCalledTimes(4);
+  } finally { service.stopPrefetch(); db.close(); }
+});
+
+test('visible EPG does not wait for a blocked background request; the scan yields to foreground requests', async () => {
+  const db = await backgroundDb('epg-all-priority', [1, 2, 3]);
+  let releaseBackground; let releaseForeground;
+  const background = new Promise(resolve => { releaseBackground = resolve; });
+  const foreground = new Promise(resolve => { releaseForeground = resolve; });
+  const full = jest.fn(id => id === 3 ? background : id === 99 ? foreground : Promise.resolve(dayListing()));
+  const client = { getEpg: full };
+  const service = createEpgService({ active: { get: async () => ({ db, client }) }, providers: {} });
+  try {
+    const scan = service.prefetchAll();
+    await waitFor(() => full.mock.calls.length === 1);
+    const visible = service.dayProgrammes({ defaultId: 99 });
+    await waitFor(() => full.mock.calls.length === 2);
+    expect(full.mock.calls.map(args => args[0])).toEqual([3, 99]);
+    releaseBackground(dayListing()); await new Promise(resolve => setTimeout(resolve, 70));
+    expect(full).toHaveBeenCalledTimes(2);
+    releaseForeground(dayListing()); await visible; await scan;
+    expect(full.mock.calls.map(args => args[0])).toEqual([3, 99, 2, 1]);
+  } finally { releaseBackground([]); releaseForeground([]); service.stopPrefetch(); db.close(); }
+});
+
+test('changing providers replaces the scan without requesting old stream IDs from the new provider; cancellation stops queued work', async () => {
+  const firstDb = await backgroundDb('epg-all-old-provider', [1, 2, 3]);
+  const nextDb = await backgroundDb('epg-all-new-provider', [8, 9]);
+  let releaseOld; let releaseNew;
+  const oldFull = jest.fn(() => new Promise(resolve => { releaseOld = resolve; }));
+  const newFull = jest.fn(() => new Promise(resolve => { releaseNew = resolve; }));
+  let current = { db: firstDb, client: { getEpg: oldFull } };
+  const service = createEpgService({ active: { get: async () => current }, providers: {} });
+  try {
+    const oldScan = service.prefetchAll(); await waitFor(() => oldFull.mock.calls.length === 1);
+    current = { db: nextDb, client: { getEpg: newFull } };
+    const nextScan = service.prefetchAll(); await waitFor(() => newFull.mock.calls.length === 1);
+    expect(newFull.mock.calls[0][0]).toBe(9);
+    service.stopPrefetch(); releaseOld(dayListing()); releaseNew(dayListing());
+    await Promise.all([oldScan, nextScan]);
+    expect(oldFull).toHaveBeenCalledTimes(1); expect(newFull).toHaveBeenCalledTimes(1);
+  } finally { service.stopPrefetch(); firstDb.close(); nextDb.close(); }
 });

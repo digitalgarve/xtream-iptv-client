@@ -1,3 +1,4 @@
+import { isPlaceholderTitle } from '../../services/xmltv.js';
 import { continueWatching } from '../../services/continueWatching.js';
 import { focusOnBar } from '../rowFocus.js';
 import { h } from '../dom.js';
@@ -15,7 +16,7 @@ import { ensureVisible, revealNearest } from '../scroll.js';
 
 /** The page moves because of the pointer (wheel, finger, scrollbar), not because a key moved the focus. */
 const scrollHeldByUser = () => typeof document !== 'undefined' && document.body.classList.contains('pointer-mode');
-import { listCategories, listNetworks, pageEntries, getEntry, countEntries, liveSequence, visibleKeys, LIVE_ALL } from '../../services/catalogQuery.js';
+import { listCategories, pageEntries, getEntry, countEntries, liveSequence, LIVE_ALL } from '../../services/catalogQuery.js';
 import { readGuideIndex } from '../../services/guideIndex.js';
 import { genreKey } from '../../services/epgChannels.js';
 import { formatNumber } from '../../core/format.js';
@@ -36,6 +37,7 @@ export { SIDEBAR_ICON, GENRE_SKELETONS, columnsFor, PREFETCH_ROWS, firstKeptRow,
 
 export function createBrowsePage(ctx, params = {}) {
   const type = params.type;
+  const isGuideView = isGuideKind;
   let columns = columnsFor(type);
   let liveList = false;
   let preview = null;
@@ -69,7 +71,8 @@ export function createBrowsePage(ctx, params = {}) {
     let genres = [];
   let pinned = []; // pinned categories / genres of this media type
   let categories = []; // visible provider categories [{ id, name }]
-  let expanded = false; // categories group (of the main provider)
+  let epgCategoriesExpanded = false;
+  let expanded = type === 'live'; // categories group (of the main provider)
   const expandedOthers = new Set(); // the categories groups of the other active providers that are open (by slot, catalogUnion.js)
   let providerNames = new Map(); // slot → name of the active providers
   let networks = []; // Live TV networks [{ key, name, memberKeys }]
@@ -102,14 +105,14 @@ export function createBrowsePage(ctx, params = {}) {
   const USER_KINDS = ['continue', 'favorites', 'suggestions'];
   let userHidden = new Set(USER_KINDS); // set again in init(), keeping the entry the page opens on
 
-  const labels = () => ({ providerName: (slot) => providerNames.get(slot) || '', guide: t('epg.guide'), scheduled: t('epg.scheduled'), all: t('browse.all'), continue: t('home.continue'), favorites: t('nav.favorites'), suggestions: t('nav.suggestions'), genres: t('detail.genres'), categories: t('detail.categories'), networks: t('networks.title') });
+  const labels = () => ({ providerName: (slot) => providerNames.get(slot) || '', guide: t('epg.guide'), scheduled: t('epg.scheduled'), all: t('browse.all'), continue: t('home.continue'), favorites: t('nav.favorites'), suggestions: t('nav.suggestions'), genres: t('detail.genres'), categories: t('detail.categories'), epgCategories: t('epg.byCategory'), networks: t('networks.title') });
 
   function renderCategories() {
     while (catList.firstChild) catList.removeChild(catList.firstChild);
     catNodes = items.map((item, i) => {
       // Only entries with an icon get the icon slot: the others start at the left edge.
       const text = countText(item);
-      const group = item.kind === 'toggle' || item.kind === 'genresToggle' || item.kind === 'networksToggle' || item.kind === 'epgGenresToggle';
+      const group = item.kind === 'toggle' || item.kind === 'genresToggle' || item.kind === 'networksToggle' || item.kind === 'epgGenresToggle' || item.kind === 'epgCategoriesToggle';
       const node = createSidebarItem({
         name: item.name,
         icon: item.pinned ? 'pin' : SIDEBAR_ICON[item.kind] || null,
@@ -156,9 +159,9 @@ export function createBrowsePage(ctx, params = {}) {
     (stayInSidebar ? loadView() : loadView(0)).catch((err) => log.warn('Browse load failed', err && err.message));
   }
 
-  const countKey = (item) => `${item.kind}:${item.id === undefined ? '' : item.id}`;
+  const countKey = (item) => `${item.kind === 'epgCategory' ? 'category' : item.kind}:${item.id === undefined ? '' : item.id}`;
   const countText = (item) => {
-    const n = item.kind === 'toggle' ? (item.count !== undefined ? item.count : categories.length) : item.kind === 'networksToggle' ? networks.length : item.kind === 'epgGenresToggle' ? epgGenres.length : item.kind === 'genresToggle' ? (genresLoading ? undefined : genres.length) : counts.get(countKey(item));
+    const n = item.kind === 'toggle' || item.kind === 'epgCategoriesToggle' ? (item.count !== undefined ? item.count : categories.length) : item.kind === 'networksToggle' ? networks.length : item.kind === 'epgGenresToggle' ? epgGenres.length : item.kind === 'genresToggle' ? (genresLoading ? undefined : genres.length) : counts.get(countKey(item));
     return n === undefined ? '' : formatNumber(n, i18n.getLocale());
   };
   const countPending = (item, text) => text === '' && countsLoading && item.kind !== 'guide' && item.kind !== 'scheduled'; // counted apart
@@ -214,7 +217,7 @@ export function createBrowsePage(ctx, params = {}) {
   async function loadUserCounts() {
     const jobs = [];
     if (type === 'live') {
-      jobs.push(safe(async () => setCount('guide:', (await guideList()).length)));
+
       setCount('scheduled:', scheduledCount);
     }
     // Counted on what the views show: titles still in the catalog, favourites this provider has.
@@ -288,9 +291,9 @@ export function createBrowsePage(ctx, params = {}) {
   /** Rebuilds the sidebar keeping the same entry selected (genres arrive late, categories expand). */
   function rebuildSidebar(focusKey, focusSlot = 0) {
     const keep = items[selected];
-    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, expandedOthers, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
+    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, epgCategoriesExpanded, expandedOthers, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
     const same = keep ? items.findIndex((item) => item.kind === keep.kind && String(item.id) === String(keep.id)) : -1;
-    selected = same >= 0 ? same : 0;
+    selected = same >= 0 ? same : indexOfFilter(items, null);
     renderCategories();
     syncFavorite();
     if (focusKey !== undefined && ctx.focus.activeId === CATS_ZONE) {
@@ -380,7 +383,6 @@ export function createBrowsePage(ctx, params = {}) {
   });
 
   const byKeys = async (keys) => (await Promise.all(keys.map((key) => getEntry(db, key)))).filter(Boolean);
-
   /** Live TV "show all" lists the grouped channels (and the ones in no group): a pseudo category of its own. */
   const allCategory = () => (type === 'live' ? LIVE_ALL : null);
   const viewCategory = (item) => (item.kind === 'category' ? item.id : item.kind === 'all' ? allCategory() : null);
@@ -527,7 +529,8 @@ export function createBrowsePage(ctx, params = {}) {
     moreJob = null;
     liveKeys = null;
     const item = items[selected] || items[0];
-    if (isGuideKind(item.kind)) {
+    if (!item || item.kind === 'toggle' || item.kind === 'epgCategoriesToggle') { hideGuide(); gridEl.textContent = ''; entries = []; total = 0; count.textContent = '0'; empty.style.display = ''; handOff(); return; }
+    if (isGuideView(item.kind)) {
       if (preview) preview.el.style.display = 'none';
       pageEl.classList.remove('live-list');
       await showGuide(typeof focusIndex === 'number');
@@ -596,21 +599,6 @@ export function createBrowsePage(ctx, params = {}) {
   /** The keys of the guide genres listed now (favourite guide genres the guide no longer has are hidden). */
   const epgGenreSet = async () => new Set(epgGenres.map((g) => g.key));
 
-  /**
-   * The genres of the guide (XMLTV categories) and their rows: a channel counts once, as its group when it has one. Nothing when the guide
-   * has no categories or expired.
-   */
-  async function loadEpgGenres() {
-    if (type !== 'live' || !ctx.epg || !ctx.epg.genreRows) return;
-    // Counted like the genre view: rows with a programme of the category in the hours the guide shows.
-    const from = floorHalfHour(Date.now()) - PAST_MS;
-    const found = await ctx.epg.genreRows({ from, to: from + PAST_MS + SPAN_MS });
-    // A kids profile: the adult rows are not counted (nor shown), a genre left without rows is not listed.
-    epgGenreKeys = new Map(Array.from(found.rows, ([key, keys]) => [key, visibleKeys(keys)]));
-    epgGenres = found.genres.filter((g) => epgGenreKeys.get(g.key).length);
-    epgGenres.forEach((g) => counts.set(`epgGenre:${g.key}`, epgGenreKeys.get(g.key).length));
-  }
-
   /** The scheduled programmes of this provider, and the rows of their channels (the "scheduled" view). */
   async function scheduledRows() {
     const list = ctx.schedules ? await ctx.schedules.list(providerId) : [];
@@ -674,6 +662,55 @@ export function createBrowsePage(ctx, params = {}) {
       enrich: ctx.enrich ? (list, guideCards) => ctx.enrich(list, guideCards, type) : null,
       isScheduled: (entry, programme) => scheduledKeys.has(scheduledKey(entry.epgChannelId, programme.start)),
     };
+    if (kind.indexOf('epgCategory:') === 0) {
+      const categoryId = kind.slice('epgCategory:'.length);
+      const originals = new Map();
+      const channelById = new Map();
+      return createEpgGuide({
+        ...common,
+        emptyText: t('epg.noData'),
+        today: true,
+        loadRows: async (offset, limit) => {
+          const result = await readEntries({ kind: 'category', id: categoryId }, offset, limit);
+          return { ...result, entries: result.entries.map(entry => {
+            const viewId = entry.epgChannelId || `@stream:${entry.key}`;
+            originals.set(entry.key, entry); channelById.set(viewId, entry);
+            return { ...entry, epgChannelId: viewId };
+          }) };
+        },
+        onOpen: (entry, row) => ctx.openEntry(originals.get(entry.key) || entry, { play: true, section: params.section, live: { categoryId, offset: row } }),
+        countRows: () => countEntries(db, { type: 'live', categoryId }),
+        programmes: async (ids, from, to) => {
+          if (ctx.epg && ctx.epg.dayProgrammes) {
+            const found = new Map();
+            for (let i = 0; i < ids.length && !destroyed; i += 4) {
+              await Promise.all(ids.slice(i, i + 4).map(async id => {
+                const entry = channelById.get(id);
+                if (entry) found.set(id, (await ctx.epg.dayProgrammes(entry).catch(() => [])).filter(p => p.stop > from && p.start < to));
+              }));
+            }
+            return found;
+          }
+          const localIds = ids.filter(id => channelById.get(id)?.epgChannelId);
+          const found = ctx.epg && ctx.epg.programmesBetween ? await ctx.epg.programmesBetween(localIds, from, to).catch(() => new Map()) : new Map();
+          const missing = ids.filter(id => !(found.get(id) || []).length);
+          if (!missing.length) return found;
+          const current = await ctx.active.get();
+          if (!current?.client?.getShortEpg) return found;
+          for (let i = 0; i < missing.length && !destroyed; i += 4) {
+            await Promise.all(missing.slice(i, i + 4).map(async id => {
+              const entry = channelById.get(id);
+              if (!entry || entry.defaultId === null || entry.defaultId === undefined) return;
+              try {
+                const list = await current.client.getShortEpg(entry.defaultId);
+                found.set(id, list.filter(p => p.stop > from && p.start < to && p.stop > p.start && !isPlaceholderTitle(p.title)));
+              } catch { /* Keep the channel visible when neither EPG source is available. */ }
+            }));
+          }
+          return found;
+        },
+      });
+    }
     if (kind.indexOf('epgGenre:') === 0) {
       // Only the programmes of that category, on the rows that have some; the focus moves only between them, across and down.
       const key = kind.slice('epgGenre:'.length);
@@ -723,7 +760,7 @@ export function createBrowsePage(ctx, params = {}) {
 
   async function showGuide(focusIt) {
     const item = items[selected];
-    const kind = item ? (item.kind === 'epgGenre' ? `epgGenre:${item.id}` : item.kind) : 'guide';
+    const kind = item ? (['epgGenre', 'epgCategory'].includes(item.kind) ? `${item.kind}:${item.id}` : item.kind) : 'guide';
     entries = [];
     cards = [];
     cardNodes = [];
@@ -747,8 +784,25 @@ export function createBrowsePage(ctx, params = {}) {
       guideHost.appendChild(guide.el);
       await guide.start();
       if (destroyed) return;
-      if (guideState && kind === 'guide') guide.restore(guideState);
+      if (guideState && (kind === 'guide' || kind.startsWith('epgCategory:'))) { guide.restore(guideState); guideState = null; }
     }
+    if (kind.startsWith('epgCategory:') && ctx.epg && ctx.epg.dayProgrammes) {
+      const shown = guide;
+      const categoryId = kind.slice('epgCategory:'.length);
+      const stillShown = () => !destroyed && guide === shown && guideHost.style.display !== 'none';
+      // Warm only this category, four streams at a time; leaving it stops queued work.
+      (async () => {
+        for (let offset = 0; stillShown(); offset += 40) {
+          const result = await readEntries({ kind: 'category', id: categoryId }, offset, 40);
+          for (let i = 0; i < result.entries.length && stillShown(); i += 4) {
+            await Promise.all(result.entries.slice(i, i + 4).map(entry => ctx.epg.dayProgrammes(entry).catch(() => [])));
+          }
+          if (!result.hasMore) break;
+        }
+      })().catch(err => log.warn('Category EPG preload failed', err && err.code));
+    }
+    count.textContent = formatNumber(guide.count);
+    renderHead();
     if (focusIt && guide.count) ctx.focus.focus(GUIDE_ZONE, 0);
   }
 
@@ -792,12 +846,13 @@ export function createBrowsePage(ctx, params = {}) {
     onActivate: (i) => {
       autoSidebar = false;
       const item = items[i];
-      if (item.kind === 'toggle' || item.kind === 'genresToggle' || item.kind === 'networksToggle' || item.kind === 'epgGenresToggle') {
+      if (item.kind === 'toggle' || item.kind === 'genresToggle' || item.kind === 'networksToggle' || item.kind === 'epgGenresToggle' || item.kind === 'epgCategoriesToggle') {
         if (item.kind === 'toggle' && item.slot) {
           if (expandedOthers.has(item.slot)) expandedOthers.delete(item.slot);
           else expandedOthers.add(item.slot);
         } else if (item.kind === 'toggle') expanded = !expanded;
         else if (item.kind === 'networksToggle') networksExpanded = !networksExpanded;
+        else if (item.kind === 'epgCategoriesToggle') epgCategoriesExpanded = !epgCategoriesExpanded;
         else if (item.kind === 'epgGenresToggle') epgGenresExpanded = !epgGenresExpanded;
         else genresExpanded = !genresExpanded;
         selected = Math.min(selected, items.length - 1);
@@ -806,8 +861,8 @@ export function createBrowsePage(ctx, params = {}) {
       }
       // OK on the entry already on screen: into its grid (or guide) as it is, without reading it again.
       if (i === selected) {
-        if (isGuideKind(item.kind) && guide && guide.count && ctx.focus.focus(GUIDE_ZONE, 0)) return;
-        if (!isGuideKind(item.kind) && entries.length && ctx.focus.focus(GRID_ZONE, Math.min(gridZone.index, entries.length - 1))) return;
+        if (isGuideView(item.kind) && guide && guide.count && ctx.focus.focus(GUIDE_ZONE, 0)) return;
+        if (!isGuideView(item.kind) && entries.length && ctx.focus.focus(GRID_ZONE, Math.min(gridZone.index, entries.length - 1))) return;
       }
       selected = i;
       catNodes.forEach((node, n) => node.classList.toggle('current', n === i));
@@ -824,7 +879,7 @@ export function createBrowsePage(ctx, params = {}) {
   function handOff() {
     if (!autoSidebar || destroyed || ctx.focus.activeId !== CATS_ZONE || catsZone.index !== selected) return;
     const item = items[selected];
-    const ok = item && isGuideKind(item.kind) ? ctx.focus.focus(GUIDE_ZONE, 0) : entries.length > 0 && ctx.focus.focus(GRID_ZONE, 0);
+    const ok = item && isGuideView(item.kind) ? ctx.focus.focus(GUIDE_ZONE, 0) : entries.length > 0 && ctx.focus.focus(GRID_ZONE, 0);
     if (ok) autoSidebar = false;
   }
 
@@ -883,7 +938,7 @@ export function createBrowsePage(ctx, params = {}) {
     const prefs = await ctx.settings.get();
     if (destroyed) return;
     timeFormat = prefs.timeFormat || 'auto';
-    liveList = type === 'live' && prefs.liveView === 'list';
+    liveList = type === 'live'; // Category lists keep the live preview; EPG categories use their own timeline.
     if (liveList) {
       columns = 1;
       gridZone.model = createGrowingGridModel({ columns, getCount: () => entries.length, hasMore: () => hasMore, more: () => loadMore(BATCH_ROWS) });
@@ -938,7 +993,7 @@ export function createBrowsePage(ctx, params = {}) {
       genresExpanded = back.genresExpanded;
       if (back.epgGenresExpanded !== undefined) epgGenresExpanded = back.epgGenresExpanded;
     }
-    const filter = back ? back.item : params.filter || (liveList ? { kind: 'all' } : null);
+    const filter = back ? back.item : params.filter || null;
     userHidden = new Set(USER_KINDS.filter((kind) => !(filter && filter.kind === kind)));
     // The entries that had something last time are there at once, with that number (corrected when it is read again).
     USER_KINDS.forEach((kind) => {
@@ -948,7 +1003,7 @@ export function createBrowsePage(ctx, params = {}) {
       counts.set(`${kind}:`, known);
     });
     // Live TV: the guide entry only when the guide has rows (read before the sidebar is drawn: the page opens on it when it is there).
-    if (type === 'live' && !(await guideList().catch(() => [])).length) userHidden.add('guide');
+
     const wantsGenre = filter && filter.kind === 'genre';
     const loadGenres = async () => {
       if (type === 'live' || fresh) return;
@@ -960,14 +1015,14 @@ export function createBrowsePage(ctx, params = {}) {
       await loadGenres();
       genresLoading = false;
     }
-    expanded = Boolean(filter && filter.kind === 'category');
-    networks = cachedSidebar ? cachedSidebar.networks : type === 'live' ? await listNetworks(db).catch(() => []) : [];
-    await loadEpgGenres().catch((err) => log.warn('Guide genres failed', err && err.message));
+    expanded = type === 'live' ? (back ? back.expanded : true) : Boolean(filter && filter.kind === 'category');
+    epgCategoriesExpanded = Boolean((back && back.epgCategoriesExpanded) || (filter && filter.kind === 'epgCategory'));
+    networks = [];
+
     // With the guide genres in the sidebar, Networks starts closed (open when a network is what the page opens on).
     if (!back) networksExpanded = !epgGenres.length || Boolean(filter && filter.kind === 'network');
     if (stale) listCategories(db, type).then((found) => { if (!destroyed) { categories = found.filter((c) => !excluded.has(String(c.id))).map((c) => ({ id: c.id, name: c.name })); rebuildSidebar(); } }).catch(() => undefined);
-    if (stale && type === 'live') listNetworks(db).then((found) => { if (!destroyed) { networks = found; rebuildSidebar(); } }).catch(() => undefined);
-    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, expandedOthers, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
+    items = sidebarItems({ type, hidden: userHidden, genres, epgGenres, epgGenresExpanded, categories, pinned: pinnedView(), networks, networksExpanded, expanded, epgCategoriesExpanded, expandedOthers, genresExpanded, genresLoading, scheduled: scheduledCount > 0, labels: labels() });
     selected = indexOfFilter(items, filter);
     renderCategories();
     syncFavorite();
@@ -984,10 +1039,10 @@ export function createBrowsePage(ctx, params = {}) {
     if (back && back.onBar) {
       // Left from the bar (the search closed): the bar keeps the focus.
     } else if (fromBar) {
-      if (items[selected] && isGuideKind(items[selected].kind) && guide && guideState) guide.restore(guideState);
+      if (items[selected] && isGuideView(items[selected].kind) && guide && guideState) guide.restore(guideState);
       ctx.focus.focus(CATS_ZONE, Math.max(0, selected));
     } else if (back && back.zone === CATS_ZONE) ctx.focus.focus(CATS_ZONE, selected);
-    else if (items[selected] && isGuideKind(items[selected].kind)) {
+    else if (items[selected] && isGuideView(items[selected].kind)) {
       if (guide && guideState) guide.restore(guideState);
       if (!ctx.focus.focus(GUIDE_ZONE, 0)) {
         ctx.focus.focus(CATS_ZONE, selected);
@@ -1073,21 +1128,7 @@ export function createBrowsePage(ctx, params = {}) {
         // A new guide download: the rows (channels with programmes) and their programmes are read again.
         if (ctx.epg && ctx.epg.onUpdated)
           stopGuideUpdates = ctx.epg.onUpdated(() => {
-            guideRowsJob = null;
-            genreGuideJob = null; // the genre views read their programmes again
-            loadEpgGenres()
-              .then(() => !destroyed && rebuildSidebar())
-              .catch(() => undefined);
-            if (guide && (guideKind === 'guide' || String(guideKind).indexOf('epgGenre:') === 0)) guide.reload().then(handOff);
-            safe(async () => {
-              const rows = (await guideList()).length;
-              setCount('guide:', rows);
-              // A guide that arrives (or empties) while the page is open: its entry appears (or goes).
-              if (destroyed || (rows > 0) !== userHidden.has('guide')) return;
-              if (rows > 0) userHidden.delete('guide');
-              else if (!(items[selected] && items[selected].kind === 'guide')) userHidden.add('guide');
-              rebuildSidebar();
-            });
+            if (guide) guide.reload().then(handOff).catch((err) => log.warn('Category EPG refresh failed', err && err.message));
           });
         // Scheduled programmes added or removed (here or from a channel page): the "scheduled" entry and its view follow.
         if (ctx.schedules)
@@ -1126,6 +1167,7 @@ export function createBrowsePage(ctx, params = {}) {
       return {
         item: item ? { kind: item.kind, id: item.id } : null,
         expanded,
+        epgCategoriesExpanded,
         networksExpanded,
         genresExpanded,
         epgGenresExpanded,

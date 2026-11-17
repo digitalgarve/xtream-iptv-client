@@ -46,28 +46,19 @@ describe('sidebar', () => {
     expect(open.some((i) => i.kind === 'genresToggle')).toBe(false);
   });
 
-  test('live: the guide first (where the page opens), then all, favourites and a categories group', () => {
-    expect(sidebarItems({ type: 'live', categories: cats, labels }).map((i) => i.kind)).toEqual(['guide', 'all', 'favorites', 'toggle']);
-    expect(sidebarItems({ type: 'live', categories: cats, expanded: true, labels }).map((i) => i.kind)).toEqual(['guide', 'all', 'favorites', 'toggle', 'category', 'category']);
-    expect(indexOfFilter(sidebarItems({ type: 'live', categories: cats, labels }), null)).toBe(0);
-  });
-
-  test('live: the guide genres (open) come before the networks, only when the guide has some', () => {
-    const genres = [{ key: 'sport', name: 'Sport' }, { key: 'news', name: 'News' }];
-    const networks = [{ key: 'live:n1', name: 'Rai' }];
-    const items = sidebarItems({ type: 'live', epgGenres: genres, networks, categories: cats, labels: { ...labels, networks: 'Reti' } });
-    expect(items.map((i) => i.kind)).toEqual(['guide', 'all', 'favorites', 'epgGenresToggle', 'epgGenre', 'epgGenre', 'networksToggle', 'network', 'toggle']);
-    expect(items[3].name).toBe('Generi');
-    expect(items[4]).toMatchObject({ id: 'sport', name: 'Sport', depth: 1 });
-    expect(sidebarItems({ type: 'live', epgGenres: genres, epgGenresExpanded: false, categories: cats, labels }).map((i) => i.kind)).toEqual(['guide', 'all', 'favorites', 'epgGenresToggle', 'toggle']);
-    expect(sidebarItems({ type: 'live', epgGenres: [], categories: cats, labels }).some((i) => i.kind === 'epgGenresToggle')).toBe(false);
+  test('live shows only directly accessible categories, regardless of EPG, networks or saved favourites', () => {
+    const items = sidebarItems({ type: 'live', categories: cats, epgGenres: [{ key: 'news', name: 'News' }], networks: [{ key: 'n', name: 'Network' }], scheduled: true, labels });
+    expect(items.map(i => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle']);
+    expect(sidebarItems({ type: 'live', categories: cats, labels, epgCategoriesExpanded: true }).filter(i => i.kind === 'epgCategory').map(i => i.id)).toEqual(cats.map(c => c.id));
+    expect(indexOfFilter(items, null)).toBe(1);
+    expect(sidebarItems({ type: 'live', categories: [], labels })).toEqual([]);
   });
 
   test('continue watching, favourites and suggestions are left out while they have nothing to show', () => {
     const hidden = new Set(['continue', 'suggestions']);
     expect(sidebarItems({ type: 'movie', hidden, categories: cats, labels }).map((i) => i.kind)).toEqual(['all', 'favorites', 'toggle']);
-    expect(sidebarItems({ type: 'live', hidden: new Set(['favorites']), categories: cats, labels }).map((i) => i.kind)).toEqual(['guide', 'all', 'toggle']);
-    expect(sidebarItems({ type: 'live', hidden: new Set(['guide']), categories: cats, labels }).map((i) => i.kind)).toEqual(['all', 'favorites', 'toggle']); // no guide rows
+    expect(sidebarItems({ type: 'live', hidden: new Set(['favorites']), categories: cats, labels }).map((i) => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle']);
+    expect(sidebarItems({ type: 'live', hidden: new Set(['guide']), categories: cats, labels }).map((i) => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle']); // no guide rows
   });
 
   test('filter lookup falls back to "show all"', () => {
@@ -86,9 +77,8 @@ test('sidebar: pinned entries sit between suggestions and genres', () => {
   expect(items[5]).toMatchObject({ pinned: true, id: '7' });
 });
 
-test('sidebar: pinned categories sit after the favourites on Live TV', () => {
+test('sidebar: a pinned Live category is not duplicated', () => {
   const labels = { all: 'All', favorites: 'F', categories: 'Cat' };
   const items = sidebarItems({ type: 'live', categories: [{ id: 3, name: 'Sport' }], pinned: [{ kind: 'category', id: 3, name: 'Sport' }], labels });
-  expect(items.map((i) => i.kind)).toEqual(['guide', 'all', 'favorites', 'category', 'toggle']);
-  expect(items[3]).toMatchObject({ pinned: true, id: '3' });
+  expect(items.filter(item => item.kind === 'category')).toEqual([{ kind: 'category', id: 3, name: 'Sport', depth: 1 }]);
 });

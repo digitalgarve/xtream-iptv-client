@@ -101,3 +101,10 @@ test('saved provider formats work without authentication; explicit live format o
   expect(createProviderClient({ ...provider, liveFormat: 'ts' }).streamUrl('movie', 5, 'mkv')).toBe('http://h/movie/u/p/5.mkv');
   expect(createProviderClient({ ...provider, allowedFormats: undefined }).streamUrl('live', 5)).toBe('http://h/live/u/p/5.m3u8');
 });
+
+test('full stream EPG uses the complete table endpoint without a short-list limit', async () => {
+  const client = new XtreamClient({ baseUrl: 'http://example.test', username: 'u', password: 'p' });
+  const request = jest.spyOn(client, 'request').mockResolvedValue({ epg_listings: [{ id: '1', title: btoa('Morning'), description: '', start_timestamp: '100', stop_timestamp: '200' }] });
+  expect((await client.getEpg(7))[0].title).toBe('Morning');
+  expect(request).toHaveBeenCalledWith('get_simple_data_table', { stream_id: 7 }, { timeoutMs: 15000 });
+});

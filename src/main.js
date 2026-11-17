@@ -301,7 +301,7 @@ async function boot() {
       name: 'epg',
       priority: Priority.EPG,
       run: () => {
-        epg.maybeSync().catch(() => undefined);
+        epg.maybeSync().catch(() => undefined).then(() => epg.prefetchAll()).catch((err) => log.warn('Background EPG preload failed', err && err.code || 'UNKNOWN'));
       },
     });
   // Favourite categories and genres show how many titles they hold; a grey sweep stands in until it is known.
@@ -375,6 +375,14 @@ async function boot() {
       } finally {
         gateOpen = false;
       }
+    }
+    if (extra.play && entry.type === 'live') {
+      ctx.router.push('player', {
+        type: 'live', entryKey: entry.key, title: entry.name, icon: entry.icon,
+        playlist: [{ id: entry.defaultId, ext: '', title: '' }], index: 0,
+        epgChannelId: entry.epgChannelId, section: extra.section, live: extra.live || null,
+      });
+      return;
     }
     ctx.router.push('detail', { entryKey: entry.key, type: entry.type, ...extra });
   };

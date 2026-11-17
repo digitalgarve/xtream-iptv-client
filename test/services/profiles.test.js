@@ -32,9 +32,10 @@ test('without profiles: the user of always (main, admin), nothing to choose, the
   expect(AVATARS).toHaveLength(20);
 });
 
-test('the first profile also makes the main one; a choice is asked at start; access PIN', async () => {
+test('adding another profile asks for a choice at start; access PIN', async () => {
   const { profiles, opened } = await setup();
-  const kid = await profiles.add({ name: 'Leo', avatar: 'robot', kids: true, admin: true, pin: '1234' }, { name: 'Andrea', avatar: 'cat' });
+  await profiles.add({ name: 'Andrea', avatar: 'cat' });
+  const kid = await profiles.add({ name: 'Leo', avatar: 'robot', kids: true, admin: true, pin: '1234' });
   const all = await profiles.list();
   expect(all.map((p) => p.name)).toEqual(['Andrea', 'Leo']);
   expect(all[0]).toMatchObject({ id: MAIN_ID, admin: true, kids: false, avatar: 'cat' });
@@ -51,9 +52,10 @@ test('the first profile also makes the main one; a choice is asked at start; acc
   expect(opened).toEqual([profileDbName(kid.id)]);
 });
 
-test('update keeps or changes the PIN; the last admin stays one; removing deletes its database, back to no profiles', async () => {
+test('update keeps or changes the PIN; the last admin stays one; removing deletes its database and keeps the main profile', async () => {
   const { profiles, removed } = await setup();
-  const other = await profiles.add({ name: 'Sara', avatar: 'fish', pin: '1111' }, { name: 'Me' });
+  await profiles.add({ name: 'Me' });
+  const other = await profiles.add({ name: 'Sara', avatar: 'fish', pin: '1111' });
   const kept = await profiles.update(other.id, { name: 'Sara B', pin: undefined });
   expect(kept.name).toBe('Sara B');
   expect(profiles.verifyAccess(kept, '1111')).toBe(true);
@@ -67,12 +69,14 @@ test('update keeps or changes the PIN; the last admin stays one; removing delete
   expect(await profiles.remove(MAIN_ID)).toBe(false); // never the main one
   expect(await profiles.remove(other.id)).toBe(true);
   expect(removed).toEqual([profileDbName(other.id)]);
-  expect(await profiles.list()).toEqual([]); // only the main one left: no profiles
+  expect(await profiles.list()).toEqual([await profiles.get(MAIN_ID)]);
+  expect((await profiles.current()).name).toBe('Me');
 });
 
 test('leaving a kids profile: the parental PIN of any profile not for kids', async () => {
   const { db, profiles } = await setup();
-  const parent = await profiles.add({ name: 'Mum', avatar: 'dove' }, { name: 'Dad' });
+  await profiles.add({ name: 'Dad' });
+  const parent = await profiles.add({ name: 'Mum', avatar: 'dove' });
   await profiles.add({ name: 'Kid', avatar: 'frog', kids: true });
   await kvSet(db, 'parental', { salt: 's', hash: hashPin('1111', 's') }); // Dad (main)
   expect(parent.kids).toBe(false);
@@ -90,7 +94,8 @@ test.each(['it-IT', 'de-DE'])('settings of a profile: its own language (%s), eve
   const { db, profiles } = await setup();
   const settings = new SettingsService(db);
   await settings.update({ language: 'en-US', bufferSeconds: 10 });
-  const other = await profiles.add({ name: 'Sara', avatar: 'fish' }, { name: 'Me' });
+  await profiles.add({ name: 'Me' });
+  const other = await profiles.add({ name: 'Sara', avatar: 'fish' });
   const view = profileSettings(settings, other, profiles);
   expect((await view.get()).language).toBe('en-US'); // none of its own yet
   await view.update({ language, bufferSeconds: 20 });
@@ -99,4 +104,22 @@ test.each(['it-IT', 'de-DE'])('settings of a profile: its own language (%s), eve
   expect((await profiles.get(other.id)).language).toBe(language);
   expect(profileSettings(settings, await profiles.get(MAIN_ID), profiles)).toBe(settings);
   expect(await kvGet(db, 'profiles', null)).toHaveLength(2);
+});
+
+test.each(['', '1234'])('first save creates only the main profile and preserves its data and PIN (%s)', async (pin) => {
+  const { db, profiles } = await setup();
+  await kvSet(db, 'existing-data', { favorite: 'channel-1' });
+  const main = await profiles.add({ name: 'Thomas', avatar: 'cat', kids: true, admin: false, pin });
+  expect(main).toMatchObject({ id: MAIN_ID, name: 'Thomas', avatar: 'cat', kids: false, admin: true });
+  expect(await profiles.list()).toEqual([main]);
+  expect(await kvGet(db, 'profiles')).toEqual([main]);
+  expect(await profiles.dbFor(main)).toBe(db);
+  expect(await kvGet(db, 'existing-data')).toEqual({ favorite: 'channel-1' });
+  expect(await profiles.needsChoice()).toBe(false);
+  const restarted = createProfiles({ db, storage: memoryStorage() });
+  expect(await restarted.current()).toEqual(pin ? null : main);
+  expect(restarted.verifyAccess(main, pin)).toBe(true);
+  if (pin) expect(restarted.verifyAccess(main, '0000')).toBe(false);
+  restarted.choose(main.id);
+  expect(await restarted.current()).toEqual(main);
 });

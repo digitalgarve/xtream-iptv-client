@@ -455,5 +455,16 @@
   "epg.noData": "Nessuna informazione sul programma",
   "epg.byCategory": "EPG per categoria",
   "operations.epgDay": "EPG giornaliero in background",
+  "settings.studioUrl": "Channel Studio: indirizzo server",
+  "settings.studioSend": "Ordina i canali nel browser",
+  "settings.studioReceive": "Applica ordine ed elimina file dal server",
+  "settings.studioDiscard": "Annulla ed elimina lo scambio",
+  "settings.studioDiscardConfirm": "Eliminare la lista temporanea dal server?",
+  "settings.studioReview": "Verifica i nomi prima di inviare",
+  "settings.studioPrivacy": "Vengono inviati solo nomi dei canali e delle categorie, ordine, visibilità e riferimenti casuali. Nessun identificativo del provider, ID EPG, URL o credenziale. Annulla se un nome contiene dettagli del provider.",
+  "settings.studioLink": "Apri il link privato nel browser. Ordina e salva, poi applica nelle impostazioni.",
+  "settings.studioDone": "Ordine applicato. File sul server eliminato.",
+  "settings.studioError": "Scambio non riuscito. Controlla indirizzo, connessione e provider attivo. Applica o annulla prima lo scambio aperto.",
+  "settings.studioDeletePending": "Ordine applicato. Eliminazione sul server non confermata. Riprova o annulla lo scambio.",
   "livePreview.unavailable": "Anteprima non disponibile per questo canale"
 }

@@ -21,3 +21,20 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  channel-studio:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/channel-studio
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/channel-studio/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build

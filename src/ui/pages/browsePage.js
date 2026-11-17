@@ -1,4 +1,5 @@
 import { isPlaceholderTitle } from '../../services/xmltv.js';
+import { readStudioLiveLayout } from '../../services/studioCatalog.js';
 import { continueWatching } from '../../services/continueWatching.js';
 import { focusOnBar } from '../rowFocus.js';
 import { h } from '../dom.js';
@@ -229,14 +230,15 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The numbers of the catalog (all, networks, genres, categories): one source at a time, none of them blocks the page. Resolves true when all were read. */
   async function loadCatalogCounts() {
-    await safe(async () => setCount('all:', liveList ? (await liveSequence(db)).length : await countEntries(db, { type, categoryId: allCategory() })));
+    await safe(async () => { const studio = type === 'live' ? await studioRows() : null; setCount('all:', studio ? studio.length : liveList ? (await orderedLiveKeys()).length : await countEntries(db, { type, categoryId: allCategory() })); });
     if (type === 'live') networks.forEach((n) => setCount(`network:${n.key}`, n.memberKeys.length));
     else {
       const genreTotals = await safe(() => ctx.genres.counts(type));
       if (genreTotals) genreTotals.forEach((n, key) => setCount(`genre:${key}`, n));
     }
     if (type === 'live') {
-      await Promise.all(categories.map((c) => safe(async () => setCount(`category:${c.id}`, await countEntries(db, { type, categoryId: c.id })))));
+      const studio = await studioRows();
+      await Promise.all(categories.map((c) => safe(async () => setCount(`category:${c.id}`, studio ? studio.filter((row) => (row.categoryIds || []).some((id) => String(id) === String(c.id))).length : await countEntries(db, { type, categoryId: c.id })))));
       return !destroyed;
     }
     for (const c of categories) {
@@ -383,6 +385,11 @@ export function createBrowsePage(ctx, params = {}) {
   });
 
   const byKeys = async (keys) => (await Promise.all(keys.map((key) => getEntry(db, key)))).filter(Boolean);
+  let studioRowsJob = null;
+  const studioRows = () => studioRowsJob || (studioRowsJob = readStudioLiveLayout(ctx, providerId, db));
+  const orderedLiveKeys = async () => { const rows = await studioRows(); return rows ? rows.map((row) => row.key) : liveSequence(db); };
+
+
   /** Live TV "show all" lists the grouped channels (and the ones in no group): a pseudo category of its own. */
   const allCategory = () => (type === 'live' ? LIVE_ALL : null);
   const viewCategory = (item) => (item.kind === 'category' ? item.id : item.kind === 'all' ? allCategory() : null);
@@ -423,8 +430,15 @@ export function createBrowsePage(ctx, params = {}) {
 
   /** The next `count` entries of the view (from the in-memory list or the catalog). */
   async function readEntries(item, offset, count) {
+    if (type === 'live' && ['all', 'category'].includes(item.kind)) {
+      const rows = await studioRows();
+      if (rows) {
+        const selectedRows = item.kind === 'category' ? rows.filter((row) => (row.categoryIds || []).some((id) => String(id) === String(item.id))) : rows;
+        return { entries: selectedRows.slice(offset, offset + count), hasMore: selectedRows.length > offset + count, total: selectedRows.length };
+      }
+    }
     if (liveList && item.kind === 'all') {
-      if (!liveKeys) liveKeys = liveSequence(db);
+      if (!liveKeys) liveKeys = orderedLiveKeys();
       const keys = await liveKeys;
       return { entries: await byKeys(keys.slice(offset, offset + count)), hasMore: keys.length > offset + count, total: keys.length };
     }
@@ -679,7 +693,10 @@ export function createBrowsePage(ctx, params = {}) {
           }) };
         },
         onOpen: (entry, row) => ctx.openEntry(originals.get(entry.key) || entry, { play: true, section: params.section, live: { categoryId, offset: row } }),
-        countRows: () => countEntries(db, { type: 'live', categoryId }),
+        countRows: async () => {
+          const custom = await studioRows();
+          return custom ? custom.filter((row) => (row.categoryIds || []).some((id) => String(id) === categoryId)).length : countEntries(db, { type: 'live', categoryId });
+        },
         programmes: async (ids, from, to) => {
           if (ctx.epg && ctx.epg.dayProgrammes) {
             const found = new Map();
@@ -948,7 +965,7 @@ export function createBrowsePage(ctx, params = {}) {
         let index;
         if (item && item.kind === 'category' && context && context.categoryId === item.id) index = context.offset;
         else if (item && item.kind === 'all') {
-          if (!liveKeys) liveKeys = liveSequence(db);
+          if (!liveKeys) liveKeys = orderedLiveKeys();
           index = (await liveKeys).indexOf(entry.key);
         } else index = (list || entries).findIndex((row) => row.key === entry.key);
         if (destroyed || token !== loadToken || !isCurrent()) return;

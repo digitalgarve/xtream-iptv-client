@@ -455,5 +455,16 @@
   "epg.noData": "No programme information",
   "epg.byCategory": "EPG by category",
   "operations.epgDay": "Daily EPG in background",
+  "settings.studioUrl": "Channel Studio: server address",
+  "settings.studioSend": "Sort channels in browser",
+  "settings.studioReceive": "Apply order and delete server file",
+  "settings.studioDiscard": "Discard and delete exchange",
+  "settings.studioDiscardConfirm": "Delete the temporary channel list from the server?",
+  "settings.studioReview": "Review channel names before sending",
+  "settings.studioPrivacy": "Only the listed channel and category names, order, visibility and random references are sent. No provider identifiers, EPG IDs, URLs or credentials. Cancel if a name contains provider details.",
+  "settings.studioLink": "Open this private link in your browser. Sort and save, then apply the order in Settings.",
+  "settings.studioDone": "Order applied. Server file deleted.",
+  "settings.studioError": "Exchange failed. Check server address, connection and active provider. Apply or discard an open exchange first.",
+  "settings.studioDeletePending": "Order applied. Server deletion not confirmed. Apply again or discard the exchange.",
   "livePreview.unavailable": "Preview unavailable for this channel"
 }

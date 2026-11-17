@@ -33,13 +33,23 @@ export async function listCategories(db, type, { all: everything = false } = {})
   return all.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
+/** Live categories follow the same ascending catalog keys as the unedited Studio export. */
+async function pageLiveCategory(db, { categoryId, offset, limit }) {
+  const rows = await requestToPromise(db.transaction('entry_cat', 'readonly').objectStore('entry_cat').index('byCatAdded').getAll(IDBKeyRange.bound(['live', String(categoryId), 0], ['live', String(categoryId), MAX_ADDED])));
+  const ordered = rows.filter((row) => !isHidden(row.entryKey)).sort((a, b) => a.entryKey < b.entryKey ? -1 : a.entryKey > b.entryKey ? 1 : 0);
+  const entries = await Promise.all(ordered.slice(offset, offset + limit).map((row) => getEntry(db, row.entryKey)));
+  return { entries: entries.filter(Boolean), hasMore: ordered.length > offset + limit };
+}
+
 /**
- * One page of grid entries, newest first.
+ * One page of entries: Live categories in catalog order, other views newest first.
  * - without `categoryId`: walks `entries` by (type, added);
- * - with `categoryId`: walks `entry_cat` by (type, category, added) and joins the entries.
- * Reads `limit + 1` rows to know whether another page exists, without counting anything.
+ * - ordinary Live categories: sort their entry keys to match Studio, then take the page.
+ * - other categories: walk `entry_cat` by (type, category, added) and join the entries.
+ * Newest-first views read `limit + 1` rows to detect another page.
  */
 export function pageEntries(db, { type, categoryId = null, offset = 0, limit = 21 }) {
+  if (type === 'live' && categoryId !== null && categoryId !== undefined && categoryId !== LIVE_ALL) return pageLiveCategory(db, { categoryId, offset, limit });
   return new Promise((resolve, reject) => {
     const tx = db.transaction(['entries', 'entry_cat'], 'readonly');
     const useCategory = categoryId !== null && categoryId !== undefined;

@@ -99,3 +99,21 @@ test('a kids profile: hidden titles and categories are left out of every read (p
   }
   expect(await countEntries(db, { type: 'movie' })).toBe(25);
 });
+
+test('unedited Live category matches Studio order, including pagination and hidden channels', async () => {
+  const { readStudioChannels } = require('../../src/services/studioCatalog.js');
+  const db = await openProviderDb(`live-studio-order-${counter += 1}`);
+  try {
+    const items = [1, 2, 10, 11, 20].map((id, i) => ({ key: `live:${id}`, type: 'live', id, name: `Sender ${id}`, categoryId: id === 20 ? 'other' : 'general', added: 100 + i }));
+    await writeEntries(db, 'live', buildEntries('live', items));
+    const expected = (await readStudioChannels(db)).filter(row => row.categoryIds.includes('general')).map(row => row.key);
+    const first = await pageEntries(db, { type: 'live', categoryId: 'general', limit: 2 });
+    const last = await pageEntries(db, { type: 'live', categoryId: 'general', offset: 2, limit: 2 });
+    expect(first.entries.concat(last.entries).map(row => row.key)).toEqual(expected);
+    expect(first.hasMore).toBe(true); expect(last.hasMore).toBe(false);
+    setHidden({ keys: new Set([expected[0]]), categories: new Set() });
+    const filtered = await pageEntries(db, { type: 'live', categoryId: 'general', offset: 1, limit: 2 });
+    expect(filtered.entries.map(row => row.key)).toEqual(expected.slice(2));
+    expect(filtered.hasMore).toBe(false);
+  } finally { setHidden(null); db.close(); }
+});

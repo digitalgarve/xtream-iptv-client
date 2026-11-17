@@ -455,5 +455,16 @@
   "epg.noData": "Keine Programmdaten",
   "epg.byCategory": "EPG nach Kategorie",
   "operations.epgDay": "EPG-Tagesdaten im Hintergrund",
+  "settings.studioUrl": "Channel Studio: Serveradresse",
+  "settings.studioSend": "Sender im Browser sortieren",
+  "settings.studioReceive": "Sortierung übernehmen und Serverdatei löschen",
+  "settings.studioDiscard": "Austausch verwerfen und löschen",
+  "settings.studioDiscardConfirm": "Die temporäre Senderliste vom Server löschen?",
+  "settings.studioReview": "Sendernamen vor dem Senden prüfen",
+  "settings.studioPrivacy": "Übertragen werden nur die unten angezeigten Sender- und Kategorienamen, Reihenfolge, Sichtbarkeit und zufällige Zuordnungswerte. Keine Anbieterkennungen, EPG-IDs, URLs oder Zugangsdaten. Falls ein Name Anbieterdetails enthält, bitte abbrechen.",
+  "settings.studioLink": "Öffne diesen privaten Link im Browser. Sortiere und speichere dort; übernimm danach die Sortierung in den Einstellungen.",
+  "settings.studioDone": "Sortierung übernommen. Serverdatei gelöscht.",
+  "settings.studioError": "Austausch fehlgeschlagen. Prüfe Serveradresse, Verbindung und aktiven Anbieter. Eine offene Sitzung zuerst übernehmen oder verwerfen.",
+  "settings.studioDeletePending": "Sortierung übernommen. Löschen auf dem Server nicht bestätigt. Bitte erneut übernehmen oder den Austausch verwerfen.",
   "livePreview.unavailable": "Vorschau für diesen Sender nicht verfügbar"
 }

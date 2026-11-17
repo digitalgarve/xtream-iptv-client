@@ -1,3 +1,13 @@
+import { kvGet, kvSet } from '../../db/kv.js';
+import { exportGuideExchange } from '../../services/guideExchange.js';
+import {
+  STUDIO_URL,
+  studioOrigin,
+  sendGuideStudio,
+  receiveGuideStudio,
+  discardGuideStudio,
+  studioSession,
+} from '../../services/guideStudio.js';
 import { createCodePrompt } from '../components/codePrompt.js';
 import { focusOnBar } from '../rowFocus.js';
 import { resetApp } from '../../services/resetApp.js';
@@ -456,6 +466,88 @@ export function createSettingsPage(ctx) {
   const epgRow = { el: epgField.el, root: epgField.root, refresh: showEpg, activate: async () => epgField.focus() };
   const epgClearRow = clearRowOf(epgField);
 
+  let studioBusy = false;
+  const studioRun = async (job) => {
+    if (studioBusy) return;
+    studioBusy = true;
+    try {
+      await job();
+    } catch (error) {
+      ctx.notices.error(t(error.studioDeletePending ? 'settings.studioDeletePending' : 'settings.studioError'));
+    } finally { studioBusy = false; }
+  };
+  const studioField = createField({
+    label: t('settings.studioUrl'),
+    inputmode: 'url',
+    onSubmit: (value) =>
+      studioRun(async () => {
+        if (await studioSession(ctx)) throw new Error('Exchange still open');
+        await kvSet(ctx.db, STUDIO_URL, studioOrigin(value.trim()));
+        ctx.notices.success(t('notice.saved'));
+      }),
+    onCancel: () =>
+      kvGet(ctx.db, STUDIO_URL, 'http://localhost:5173').then((url) => studioField.setValue(url)),
+  });
+  const studioUrlRow = {
+    el: studioField.el,
+    root: studioField.root,
+    activate: () => studioField.focus(),
+    refresh: () =>
+      kvGet(ctx.db, STUDIO_URL, 'http://localhost:5173').then((url) => studioField.setValue(url)),
+  };
+  const showStudioLink = (url) =>
+    ctx.dialogs.confirm({
+      title: 'Channel Studio',
+      content: createCodePrompt({ url, description: t('settings.studioLink'), code: '' }),
+      confirmLabel: t('common.ok'),
+      cancelLabel: t('setup.cancel'),
+    });
+  const studioSend = actionRow({
+    ctx,
+    label: t('settings.studioSend'),
+    run: () =>
+      studioRun(async () => {
+        const existing = await studioSession(ctx);
+        if (existing) {
+          await showStudioLink(`${existing.origin}/client/${existing.id}`);
+          return;
+        }
+        const xml = await exportGuideExchange(ctx);
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        const approved = await ctx.dialogs.confirm({ title: t('settings.studioReview'), message: t('settings.studioPrivacy'), confirmLabel: t('common.ok'), cancelLabel: t('setup.cancel') });
+        if (!approved) return;
+        const nodes = Array.from(doc.querySelectorAll('channel'));
+        const reviewed = await ctx.dialogs.editCollection({
+          title: t('settings.studioReview'),
+          items: nodes.map((node) => ({ key: node.getAttribute('ref'), name: [node.querySelector('name').textContent, ...Array.from(node.querySelectorAll('category')).map((category) => category.textContent)].join(' · ') })),
+          saveLabel: t('settings.studioSend'), cancelLabel: t('setup.cancel'),
+        });
+        if (!reviewed) return;
+        nodes.forEach((node) => { if (reviewed.remove.includes(node.getAttribute('ref'))) node.remove(); });
+        if (!doc.querySelector('channel')) return;
+        await showStudioLink(await sendGuideStudio(ctx, new XMLSerializer().serializeToString(doc)));
+      }),
+  });
+  const studioReceive = actionRow({
+    ctx,
+    label: t('settings.studioReceive'),
+    run: () =>
+      studioRun(async () => {
+        await receiveGuideStudio(ctx);
+        ctx.notices.success(t('settings.studioDone'));
+      }),
+  });
+  const studioDiscard = actionRow({
+    ctx,
+    label: t('settings.studioDiscard'),
+    confirm: t('settings.studioDiscardConfirm'),
+    run: () =>
+      studioRun(async () => {
+        await discardGuideStudio(ctx);
+        ctx.notices.success(t('notice.removed'));
+      }),
+  });
+
   /** A number field for a network setting; Enter saves and rebuilds Live TV. Its x puts the default value back (to confirm with Done). */
   function numberRows({ key, labelKey, fallback }) {
     const show = () => ctx.settings.get().then((s) => { field.setValue(s[key]); });
@@ -523,7 +615,7 @@ export function createSettingsPage(ctx) {
     {
       // Channels: their grouping by quality, the words removed from their names to compare them, the custom guide.
       titleKey: 'settings.section.live',
-      parts: [{ list: [liveGrouping] }, { fields: [patternsRow, patternsClearRow] }, { fields: [epgRow, epgClearRow] }],
+      parts: [{ list: [liveGrouping] }, { fields: [patternsRow, patternsClearRow] }, { fields: [epgRow, epgClearRow] }, { fields: [studioUrlRow] }, { list: [studioSend, studioReceive, studioDiscard] }],
     },
     {
       // Networks: on / off, then how similar names must be; the toggle for the numbers sits right under the maximum difference.

@@ -2,7 +2,7 @@ import { openAppDb } from '../../src/db/appDb.js';
 import { WatchStore } from '../../src/services/watchStore.js';
 import { createTraktService, createWatchState, historyPayload, flattenWatchedShows, manualPayload, progressPayload, readAllPages, unmatched } from '../../src/services/traktService.js';
 import { createTraktClient } from '../../src/services/traktClient.js';
-import { kvSet } from '../../src/db/kv.js';
+import { kvGet, kvSet } from '../../src/db/kv.js';
 
 let n = 0;
 const appDb = () => openAppDb(`trakt-test-${(n += 1)}`);
@@ -335,7 +335,6 @@ describe('watched lists paginated by Trakt (since July 2026), titles Trakt does 
     const urls = [];
     const client = createTraktClient({
       clientId: 'id',
-      clientSecret: 's',
       doFetch: async (url) => {
         urls.push(url);
         return { status: 200, ok: true, text: async () => '[]', headers: { get: (h) => (h === 'X-Pagination-Page-Count' ? '4' : null) } };
@@ -572,3 +571,70 @@ describe('rewind of a whole series', () => {
   });
 });
 
+
+
+describe('secret-free Trakt authentication', () => {
+  test('requires only the Client ID and routes OAuth separately from API calls', async () => {
+    const doFetch = jest.fn(async () => ({ ok: true, status: 200, text: async () => '{}' }));
+    let credentials = { clientId: '', clientSecret: 'legacy-secret' };
+    const client = createTraktClient({ getCredentials: () => credentials, doFetch });
+    expect(client.enabled).toBe(false);
+    await expect(client.deviceCode()).rejects.toThrow('Trakt is not configured');
+    expect(doFetch).not.toHaveBeenCalled();
+    credentials = { clientId: 'ID' };
+    expect(client.enabled).toBe(true);
+    await client.deviceCode();
+    await client.pollToken('DEVICE');
+    // Previously saved secrets must never be sent either.
+    credentials.clientSecret = 'legacy-secret';
+    await client.refresh('REFRESH');
+    await client.profile('ACCESS');
+    expect(doFetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://auth.trakt.tv/oauth/device/code',
+      'https://auth.trakt.tv/oauth/device/token',
+      'https://auth.trakt.tv/oauth/token',
+      'https://api.trakt.tv/users/settings',
+    ]);
+    expect(doFetch.mock.calls.slice(0, 3).map(([, options]) => JSON.parse(options.body))).toEqual([
+      { client_id: 'ID' },
+      { client_id: 'ID', code: 'DEVICE' },
+      { client_id: 'ID', refresh_token: 'REFRESH', redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', grant_type: 'refresh_token' },
+    ]);
+    expect(doFetch.mock.calls[3][1].headers).toMatchObject({ 'trakt-api-key': 'ID', Authorization: 'Bearer ACCESS' });
+  });
+
+  test('concurrent requests share a refresh and persist the rotated token', async () => {
+    const db = await appDb();
+    await kvSet(db, 'trakt.token', { accessToken: 'OLD', refreshToken: 'RT1', expiresAt: 0 });
+    const client = {
+      enabled: true,
+      refresh: jest.fn(async () => ({ ok: true, data: { access_token: 'NEW', refresh_token: 'RT2', created_at: 1000, expires_in: 604800 } })),
+      watchedShows: jest.fn(async () => ({ ok: true, data: [] })),
+    };
+    const svc = createTraktService({ db, client, now: () => 1000000 });
+    await Promise.all([svc.watchedEpisodes(), svc.watchedEpisodes()]);
+    expect(client.refresh).toHaveBeenCalledTimes(1);
+    expect(client.refresh).toHaveBeenCalledWith('RT1');
+    expect(client.watchedShows).toHaveBeenCalledWith('NEW', { page: 1 });
+    expect(await kvGet(db, 'trakt.token')).toEqual({ accessToken: 'NEW', refreshToken: 'RT2', expiresAt: 605800000 });
+    await svc.watchedEpisodes();
+    expect(client.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failed refresh releases the shared request and preserves saved tokens', async () => {
+    const db = await appDb();
+    const stored = { accessToken: 'OLD', refreshToken: 'RT1', expiresAt: 0 };
+    await kvSet(db, 'trakt.token', stored);
+    const client = {
+      enabled: true,
+      refresh: jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ok: false, status: 400 }),
+      watchedShows: jest.fn(),
+    };
+    const svc = createTraktService({ db, client });
+    await expect(svc.watchedEpisodes()).rejects.toThrow('offline');
+    expect(await svc.watchedEpisodes()).toEqual([]);
+    expect(client.refresh).toHaveBeenCalledTimes(2);
+    expect(client.watchedShows).not.toHaveBeenCalled();
+    expect(await kvGet(db, 'trakt.token')).toEqual(stored);
+  });
+});

@@ -170,7 +170,14 @@ export function createTraktService({ db, client, now = Date.now, wait = sleep })
     return res;
   }
 
-  async function token() {
+  let pendingToken = null;
+  function token() {
+    // Refresh tokens are single-use: concurrent callers must share the read and renewal.
+    if (!pendingToken) pendingToken = loadToken().finally(() => { pendingToken = null; });
+    return pendingToken;
+  }
+
+  async function loadToken() {
     const stored = await kvGet(db, TOKEN_KEY, null);
     if (!stored) return null;
     if (stored.expiresAt - now() > 24 * 3600 * 1000) return stored.accessToken;

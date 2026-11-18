@@ -1,7 +1,7 @@
 import { kvGet, kvSet } from '../db/kv.js';
 
 const KEY = 'apiKeys';
-const FIELDS = ['tmdbKey', 'traktId', 'traktSecret', 'openSubtitlesKey'];
+const FIELDS = ['tmdbKey', 'traktId', 'openSubtitlesKey'];
 
 /** API keys come only from the settings (nothing is compiled into the build). */
 export function createApiKeys({ db }) {

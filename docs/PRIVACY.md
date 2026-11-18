@@ -24,7 +24,7 @@ scheduled.
 
 - **The user's IPTV provider**, at the addresses the user typed: to read the catalog and the guide and to play the streams.
 - **TMDB** (api.themoviedb.org), only when the user typed a TMDB key: title identifiers and the app language, to read posters, plots, cast and recommendations.
-- **Trakt** (api.trakt.tv), only when the user connected a Trakt account: watched titles and playback progress, to keep the user's history in sync.
+- **Trakt**: `auth.trakt.tv` receives the Client ID, device code and refresh token during account connection and renewal. `api.trakt.tv` receives watched titles and playback progress when connected, to keep history in sync; with a configured Client ID it can also receive title identifiers for related recommendations without a connected account.
 - **OpenSubtitles** (api.opensubtitles.com), only when the user typed an OpenSubtitles key and asks for subtitles: the title identifier, the language and a hash of the video file (computed from its first and last 64 KB), to find subtitles.
 - **YouTube**, only when the user plays a trailer.
 - **GitHub Pages** (andreadegiovine.github.io), only in the "autoupdate" packages distributed outside the TV stores: to check for and download a newer version of the app. The store packages never contact it.

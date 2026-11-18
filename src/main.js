@@ -218,7 +218,7 @@ async function boot() {
   ctx.apiKeys = createApiKeys({ db });
   const keysReady = ctx.apiKeys.load(); // read while the rest of the start-up is set up; awaited before the first page
   keysReady.catch(() => undefined);
-  ctx.trakt = createTraktService({ db: pdb, client: createTraktClient({ getCredentials: () => ({ clientId: ctx.apiKeys.get().traktId, clientSecret: ctx.apiKeys.get().traktSecret }) }) });
+  ctx.trakt = createTraktService({ db: pdb, client: createTraktClient({ getCredentials: () => ({ clientId: ctx.apiKeys.get().traktId }) }) });
   ctx.watch = createWatchState({ store: new WatchStore(pdb), trakt: ctx.trakt });
   ctx.openSubtitles = createOpenSubtitles({ getKey: () => ctx.apiKeys.get().openSubtitlesKey });
   const tmdb = createTmdbService({ db, client: createTmdbClient({ getApiKey: () => ctx.apiKeys.get().tmdbKey }), getLanguage: () => i18n.getLocale(), onActivity: (count) => ctx.genres && ctx.genres.hold('ui', count > 0) });

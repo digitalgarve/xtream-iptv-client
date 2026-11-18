@@ -6,7 +6,7 @@ import { setTip } from '../tooltip.js';
 import { createSkeletonBlock } from '../atoms/skeleton.js';
 import { createCard } from './card.js';
 import { t, i18n } from '../../i18n/index.js';
-import { formatClockTime } from '../../core/clock.js';
+import { formatClockTime, dayBounds } from '../../core/clock.js';
 import { log } from '../../core/logger.js';
 
 /** Minutes → pixels on the time axis (a half hour is 240 px: a 30-minute programme shows a title of ~20 letters). */
@@ -93,9 +93,11 @@ export function scrollFor(segment, start, x, width) {
  * `isScheduled(entry, programme)`: a programme whose viewing is scheduled, drawn like the focused one (`repaintScheduled()` after a change).
  * Every programme has a tooltip: its full title, and its start and end times on the line below.
  */
-export function createEpgGuide({ loadRows, countRows, programmes, onOpen, getTimeFormat = () => 'auto', enrich = null, now = Date.now, emptyText = null, pickSegment = null, programmesOnly = false, rowActions = [], onRowAction = null, defaultRowAction = 0, isScheduled = null }) {
-  let start = floorHalfHour(now()) - PAST_MS; // moves on with the half hours while the guide stays open
-  let end = start + SPAN_MS + PAST_MS;
+export function createEpgGuide({ loadRows, countRows, programmes, onOpen, getTimeFormat = () => 'auto', enrich = null, now = Date.now, emptyText = null, pickSegment = null, programmesOnly = false, rowActions = [], onRowAction = null, defaultRowAction = 0, isScheduled = null, today = false }) {
+  const axisStart = () => today ? dayBounds(now()).start : floorHalfHour(now()) - PAST_MS;
+  const axisEnd = () => today ? dayBounds(now()).end : start + SPAN_MS + PAST_MS;
+  let start = axisStart(); // moves on with the half hours while the guide stays open
+  let end = axisEnd();
   const ruler = h('div', { class: 'epg-ruler' });
   const rulerViewport = h('div', { class: 'epg-ruler-viewport' }, ruler);
   const corner = h('div', { class: 'epg-corner' });
@@ -239,7 +241,7 @@ export function createEpgGuide({ loadRows, countRows, programmes, onOpen, getTim
       const left = xOf(seg.start, start);
       const shift = left < x ? Math.max(0, Math.min(x - left, xOf(seg.stop, start) - left - 160)) : 0;
       const title = segNode.firstChild;
-      if (title) title.style.setProperty('--pin', `${shift > 0 ? Math.round(shift) : 0}px`); // the stylesheet adds the taller letters
+      if (title) title.style.setProperty('--pin', `${shift > 0 ? Math.round(shift) : 0}px`);
     });
   }
 
@@ -405,11 +407,11 @@ export function createEpgGuide({ loadRows, countRows, programmes, onOpen, getTim
    */
   /** A new half hour began: the axis starts from it (the half hour gone by leaves), the programmes are read again for the new hours. */
   function shiftAxis() {
-    const next = floorHalfHour(now()) - PAST_MS;
+    const next = axisStart();
     x = Math.max(0, x - xOf(next, start));
     focusTime = Math.max(focusTime, next);
     start = next;
-    end = start + SPAN_MS + PAST_MS;
+    end = axisEnd();
     ruler.style.width = `${xOf(end, start)}px`;
     drawRuler();
     guide.clear();
@@ -475,7 +477,7 @@ export function createEpgGuide({ loadRows, countRows, programmes, onOpen, getTim
       focusAt(0);
       applyScroll();
       clock = setInterval(() => {
-        if (floorHalfHour(now()) - PAST_MS !== start) shiftAxis();
+        if (axisStart() !== start) shiftAxis();
         drawNow();
         rowNodes.forEach((node) => node.segNodes.forEach((seg, i) => {
           const s = node.segments[i];
@@ -544,11 +546,12 @@ export function createEpgGuide({ loadRows, countRows, programmes, onOpen, getTim
       }
       return 0;
     },
-    /** The rows changed (order, removed ones): read again, focus on `row`; the selection stays when `keepRowMode`. */
+    /** Reload rows and programmes, focus on `row`; the selection stays when `keepRowMode`. */
     async reload({ row = focusRow, keepRowMode = false } = {}) {
       if (!keepRowMode) rowMode = null;
       entries.length = 0;
       pagesLoading.clear();
+      guide.clear();
       rowNodes.forEach((node) => node.el.remove());
       rowNodes = new Map();
       total = await countRows().catch(() => 0);

@@ -451,5 +451,7 @@
   "livePreview.select": "Select a channel",
   "livePreview.noEpg": "No programme information available",
   "livePreview.help": "OK: full screen · Hold OK: channel details",
+  "epg.noData": "No programme information",
+  "epg.byCategory": "EPG by category",
   "livePreview.unavailable": "Preview unavailable for this channel"
 }

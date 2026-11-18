@@ -28,27 +28,28 @@ test('Live TV page: after opening a title and coming back, the same sidebar entr
     notices: { success: jest.fn() },
     openEntry: jest.fn(),
   };
-  const first = createBrowsePage(ctx, { type: 'live', section: 'live' });
+  const first = createBrowsePage(ctx, { type: 'live', section: 'live', filter: { kind: 'epgCategory', id: '1' } });
   first.mount();
   await tick();
   const names = Array.from(first.el.querySelectorAll('.browse-cat-name')).map((n) => n.textContent);
-  expect(names).toContain('Rai');
-  ctx.focus.focus('browseCategories', names.indexOf('Rai'));
-  ctx.focus.handle(Action.ENTER); // open the Rai network view
+  expect(names).toEqual(['Categories', 'All', 'EPG by category', 'All', 'Show all']);
+  ctx.focus.focus('browseCategories', names.lastIndexOf('All'));
+  ctx.focus.handle(Action.ENTER); // open the category EPG
   await tick();
-  ctx.focus.focus('browseGrid', 1);
+  ctx.focus.focus('browseGuide', 0);
+  ctx.focus.zones.get('browseGuide').model.navigate('down', 0);
   const state = first.saveState();
-  expect(state).toMatchObject({ zone: 'browseGrid', index: 1, item: { kind: 'network', id: 'live:nrai' } });
+  expect(state).toMatchObject({ zone: 'browseGuide', item: { kind: 'epgCategory', id: '1' }, guide: { row: 1 } });
   first.destroy();
 
   const again = createBrowsePage(ctx, { type: 'live', section: 'live' });
   again.mount();
   again.restoreState(state);
   await tick(60);
-  expect(again.el.querySelector('.browse-cat.current .browse-cat-name').textContent).toBe('Rai');
-  expect(again.el.querySelector('.browse-title').textContent).toBe('Rai');
-  expect(ctx.focus.activeId).toBe('browseGrid');
-  expect(ctx.focus.active.index).toBe(1);
+  expect(again.el.querySelector('.browse-cat.current .browse-cat-name').textContent).toBe('All');
+  expect(again.el.querySelector('.browse-title').textContent).toBe('All');
+  expect(ctx.focus.activeId).toBe('browseGuide');
+  expect(again.saveState().guide.row).toBe(1);
   again.destroy();
 });
 

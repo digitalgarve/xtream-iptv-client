@@ -6,13 +6,13 @@ import { GridModel } from '../../focus/models.js';
 import { decodeCategory } from '../../../services/catalogUnion.js';
 
 /** Icon before the label of the fixed sidebar entries (genres and categories get an empty slot to stay aligned). */
-export const SIDEBAR_ICON = { guide: 'clock', scheduled: 'scheduled', all: 'all', continue: 'continue', favorites: 'heart', suggestions: 'suggestions', genresToggle: 'genres', epgGenresToggle: 'genres', toggle: 'categories', networksToggle: 'network' };
+export const SIDEBAR_ICON = { guide: 'clock', epgCategoriesToggle: 'clock', scheduled: 'scheduled', all: 'all', continue: 'continue', favorites: 'heart', suggestions: 'suggestions', genresToggle: 'genres', epgGenresToggle: 'genres', toggle: 'categories', networksToggle: 'network' };
 /** Placeholder rows shown while the genres load: enough that the "Categories" entry stays below the screen. */
 export const GENRE_SKELETONS = 12;
 /** Views that are loaded as one in-memory list and paged locally. */
 export const LIST_KINDS = ['continue', 'favorites', 'suggestions', 'genre', 'network'];
 /** Sidebar entries shown as a programme guide instead of a grid: the guide, the scheduled programmes, a genre of the guide. */
-export const isGuideKind = (kind) => kind === 'guide' || kind === 'scheduled' || kind === 'epgGenre';
+export const isGuideKind = (kind) => kind === 'guide' || kind === 'scheduled' || kind === 'epgGenre' || kind === 'epgCategory';
 /** Views read from the catalog only (so their first page can be cached); continue, favourites and suggestions come from the user. */
 export const CACHED_KINDS = ['all', 'category', 'genre', 'network'];
 /** Every media type uses the same 6-column grid of equally sized cards (channels included). */
@@ -61,30 +61,20 @@ export function createGrowingGridModel({ columns, getCount, hasMore, more }) {
 
 /**
  * Sidebar entries. Movies and series: show all, continue watching, favourites, suggestions, a "Genres"
- * entry (open by default) with the genres, then a "Categories" entry that expands into the provider categories. Channels: show all, favourites, pinned categories,
- * the "Genres" entry of the guide's categories (open, only when the guide has them), the "Networks" entry (open, closed when the guide genres
- * are there) and the categories (closed).
+ * entry (open by default) with genres, then expandable provider categories. Live TV opens its categories and keeps show all available for uncategorized channels.
  */
-export function sidebarItems({ type, hidden = null, genres = [], epgGenres = [], epgGenresExpanded = true, categories = [], pinned = [], networks = [], networksExpanded = true, expanded = false, expandedOthers = new Set(), genresExpanded = true, genresLoading = false, scheduled = false, labels }) {
-  // Live TV opens on the programme guide; "show all" follows it.
-  // "Scheduled" (programmes whose viewing is scheduled) follows the guide when there are any.
-  // The programme guide (Live TV) is listed only when it has rows (a channel with programmes in the hours shown).
-  const guide = hidden && hidden.has('guide') ? [] : [{ kind: 'guide', name: labels.guide }];
-  const items = type === 'live' ? guide.concat(scheduled ? [{ kind: 'scheduled', name: labels.scheduled }] : [], [{ kind: 'all', name: labels.all }]) : [{ kind: 'all', name: labels.all }];
+export function sidebarItems({ type, hidden = null, genres = [], categories = [], pinned = [], expanded = type === 'live', epgCategoriesExpanded = false, expandedOthers = new Set(), genresExpanded = true, genresLoading = false, labels }) {
   if (type === 'live') {
-    if (!(hidden && hidden.has('favorites'))) items.push({ kind: 'favorites', name: labels.favorites });
-    pinned.forEach((p) => items.push({ kind: p.kind, id: String(p.id), name: p.name, pinned: true }));
-    if (epgGenres.length) {
-      items.push({ kind: 'epgGenresToggle', name: labels.genres, expanded: epgGenresExpanded });
-      if (epgGenresExpanded) epgGenres.forEach((g) => items.push({ kind: 'epgGenre', id: g.key, name: g.name, depth: 1 }));
-    }
-    if (networks.length) {
-      items.push({ kind: 'networksToggle', name: labels.networks, expanded: networksExpanded });
-      if (networksExpanded) networks.forEach((n) => items.push({ kind: 'network', id: n.key, name: n.name, depth: 1 }));
-    }
-    pushCategories(items, categories, expanded, expandedOthers, labels);
-    return items;
+    if (!categories.length) return [{ kind: 'all', name: labels.all }];
+    return [
+      { kind: 'toggle', name: labels.categories, expanded, count: categories.length },
+      ...(expanded ? categories.map(category => ({ kind: 'category', id: category.id, name: category.name, depth: 1 })) : []),
+      { kind: 'epgCategoriesToggle', name: labels.epgCategories, expanded: epgCategoriesExpanded, count: categories.length },
+      ...(epgCategoriesExpanded ? categories.map(category => ({ kind: 'epgCategory', id: category.id, name: category.name, depth: 1 })) : []),
+      { kind: 'all', name: labels.all },
+    ];
   }
+  const items = [{ kind: 'all', name: labels.all }];
   // Continue watching, favourites and suggestions are listed only when they have something to show (`hidden`).
   [{ kind: 'continue', name: labels.continue }, { kind: 'favorites', name: labels.favorites }, { kind: 'suggestions', name: labels.suggestions }].forEach((item) => {
     if (!(hidden && hidden.has(item.kind))) items.push(item);
@@ -123,9 +113,10 @@ function pushCategories(items, categories, expanded, expandedOthers, labels) {
 
 /** Index of the entry matching a filter ({ kind, id }); 0 ("show all") when it is not there. */
 export function indexOfFilter(items, filter) {
-  if (!filter) return 0;
+  const fallback = items[0] && items[0].kind === 'toggle' ? Math.max(0, items.findIndex(item => item.kind === 'category' || item.kind === 'epgCategory')) : 0;
+  if (!filter) return fallback;
   const index = items.findIndex((item) => item.kind === filter.kind && String(item.id) === String(filter.id));
-  return Math.max(0, index);
+  return index < 0 ? fallback : index;
 }
 
 /** Movies / Series / Live: sidebar on the left, paged grid of grouped titles on the right. */

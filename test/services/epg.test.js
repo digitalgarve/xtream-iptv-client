@@ -55,10 +55,10 @@ describe('syncEpg', () => {
 
   test('stores wanted programmes, drops stale rows and records meta', async () => {
     const db = await makeDb();
-    await dbPutMany(db, 'epg', [{ channelId: 'a', start: NOW - 7200000, stop: NOW - 3600000, title: 'Old' }]);
+    await dbPutMany(db, 'epg', [{ channelId: 'a', start: NOW - 7200000, stop: NOW - 3600000, title: 'Earlier today' }, { channelId: 'a', start: NOW - 48 * 3600000, stop: NOW - 24 * 3600000, title: 'Yesterday' }]);
     const meta = await syncEpg({ db, url: 'x', now: NOW, fetchImpl: guideFetch(xml) });
-    expect(meta).toMatchObject({ programmes: 2, channels: 1 });
-    expect((await dbGetAll(db, 'epg')).map((r) => r.title).sort()).toEqual(['Next', 'Now']);
+    expect(meta).toMatchObject({ programmes: 2, channels: 1 }); // two newly downloaded programmes; earlier today remains stored
+    expect((await dbGetAll(db, 'epg')).map((r) => r.title).sort()).toEqual(['Earlier today', 'Next', 'Now']);
   });
 
   test('the download stores the channel summary: the service reads channels and genres from it, and clear() deletes everything', async () => {

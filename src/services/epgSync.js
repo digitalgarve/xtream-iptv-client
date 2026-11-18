@@ -1,3 +1,4 @@
+import { dayBounds } from '../core/clock.js';
 import { dbPutMany, dbGetAllKeys, dbDeleteMany, dbGet, dbPut, dbClear, dbDelete } from '../core/idb.js';
 import { openProviderDb } from '../db/providerDb.js';
 import { createXmltvParser } from './xmltv.js';
@@ -90,6 +91,7 @@ export async function syncEpg({ db, url, now = Date.now(), signal, emit = () => 
   const summary = shared || createChannelSummary(); // span and genres of every channel, for the guide page and the Live TV sidebar
   const parser = createXmltvParser({
     now,
+    pastFrom: dayBounds(now).start,
     channels: wanted,
     onProgramme: (p) => {
       summary.add(p);
@@ -106,7 +108,7 @@ export async function syncEpg({ db, url, now = Date.now(), signal, emit = () => 
   await writes;
   const total = written;
   if (!finish) return { programmes: total, totalInFile: parser.stats().total, durationMs: Date.now() - t0 };
-  const stale = await dbGetAllKeys(db, 'epg', { index: 'byStop', range: IDBKeyRange.upperBound(now) });
+  const stale = await dbGetAllKeys(db, 'epg', { index: 'byStop', range: IDBKeyRange.upperBound(dayBounds(now).start) });
   await dbDeleteMany(db, 'epg', stale);
   const perChannel = summary.result();
   await dbPut(db, 'meta', perChannel);
@@ -151,7 +153,7 @@ export async function probeGuide(url, { fetchImpl = fetch, signal } = {}) {
 
 /** After the guides were read: old programmes out, the channel summary and the record of the download written. */
 async function finishEpg({ db, now, summary, channels }) {
-  const stale = await dbGetAllKeys(db, 'epg', { index: 'byStop', range: IDBKeyRange.upperBound(now) });
+  const stale = await dbGetAllKeys(db, 'epg', { index: 'byStop', range: IDBKeyRange.upperBound(dayBounds(now).start) });
   await dbDeleteMany(db, 'epg', stale);
   const perChannel = summary.result();
   await dbPut(db, 'meta', perChannel);

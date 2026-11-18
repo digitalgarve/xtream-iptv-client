@@ -376,6 +376,14 @@ async function boot() {
         gateOpen = false;
       }
     }
+    if (extra.play && entry.type === 'live') {
+      ctx.router.push('player', {
+        type: 'live', entryKey: entry.key, title: entry.name, icon: entry.icon,
+        playlist: [{ id: entry.defaultId, ext: '', title: '' }], index: 0,
+        epgChannelId: entry.epgChannelId, section: extra.section, live: extra.live || null,
+      });
+      return;
+    }
     ctx.router.push('detail', { entryKey: entry.key, type: entry.type, ...extra });
   };
 

@@ -71,7 +71,7 @@ export function isPlaceholderTitle(title) {
  * (ends after `now`, starts before `now + horizonMs`) of the wanted channels. Never holds more than one
  * partial programme in memory, so a very large guide is fine.
  */
-export function createXmltvParser({ now, horizonMs = 48 * 3600 * 1000, channels = null, onProgramme }) {
+export function createXmltvParser({ now, horizonMs = 48 * 3600 * 1000, pastFrom = now, channels = null, onProgramme }) {
   let buffer = '';
   let total = 0;
   let kept = 0;
@@ -86,7 +86,7 @@ export function createXmltvParser({ now, horizonMs = 48 * 3600 * 1000, channels 
       const attrs = attributes(match[1]);
       const start = parseXmltvTime(attrs.start);
       const stop = parseXmltvTime(attrs.stop);
-      if (attrs.channel && Number.isFinite(start) && Number.isFinite(stop) && stop > now && start < now + horizonMs && (!channels || channels.has(attrs.channel))) {
+      if (attrs.channel && Number.isFinite(start) && Number.isFinite(stop) && stop > pastFrom && start < now + horizonMs && (!channels || channels.has(attrs.channel))) {
         const body = match[2] || '';
         const title = firstTag(body, 'title');
         if (!isPlaceholderTitle(title)) {

@@ -246,3 +246,13 @@ test('every programme has a tooltip (full title, then its times); the scheduled 
   expect(g.el.querySelectorAll('.epg-prog.scheduled')).toHaveLength(0);
   g.destroy();
 });
+
+test('today view requests the entire local calendar day while initially showing the current time', async () => {
+  const now = new Date(2026, 10, 17, 13, 15).getTime();
+  const from = new Date(2026, 10, 17).getTime(); const to = new Date(2026, 10, 18).getTime();
+  const programmes = jest.fn(async () => new Map());
+  const g = createEpgGuide({ today: true, now: () => now, loadRows: async () => ({ entries: [{ key: 'x', name: 'X', epgChannelId: 'x' }] }), countRows: async () => 1, programmes, onOpen: () => {} });
+  document.body.appendChild(g.el);
+  try { await g.start(); await tick(); expect(programmes).toHaveBeenCalledWith(['x'], from, to); expect(g.el.querySelector('.epg-tick').textContent).toMatch(/00:00|12:00/); }
+  finally { g.destroy(); g.el.remove(); }
+});

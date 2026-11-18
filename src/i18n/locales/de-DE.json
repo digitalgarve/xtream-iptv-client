@@ -451,5 +451,7 @@
   "livePreview.select": "Sender auswählen",
   "livePreview.noEpg": "Keine Programminformationen verfügbar",
   "livePreview.help": "OK: Vollbild · Lange OK: Senderdetails",
+  "epg.noData": "Keine Programmdaten",
+  "epg.byCategory": "EPG nach Kategorie",
   "livePreview.unavailable": "Vorschau für diesen Sender nicht verfügbar"
 }

@@ -46,19 +46,19 @@ describe('sidebar', () => {
     expect(open.some((i) => i.kind === 'genresToggle')).toBe(false);
   });
 
-  test('live shows only directly accessible categories, regardless of EPG, networks or saved favourites', () => {
+  test('live keeps show all alongside categories for uncategorized channels', () => {
     const items = sidebarItems({ type: 'live', categories: cats, epgGenres: [{ key: 'news', name: 'News' }], networks: [{ key: 'n', name: 'Network' }], scheduled: true, labels });
-    expect(items.map(i => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle']);
+    expect(items.map(i => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle', 'all']);
     expect(sidebarItems({ type: 'live', categories: cats, labels, epgCategoriesExpanded: true }).filter(i => i.kind === 'epgCategory').map(i => i.id)).toEqual(cats.map(c => c.id));
     expect(indexOfFilter(items, null)).toBe(1);
-    expect(sidebarItems({ type: 'live', categories: [], labels })).toEqual([]);
+    expect(sidebarItems({ type: 'live', categories: [], labels })).toEqual([{ kind: 'all', name: labels.all }]);
   });
 
   test('continue watching, favourites and suggestions are left out while they have nothing to show', () => {
     const hidden = new Set(['continue', 'suggestions']);
     expect(sidebarItems({ type: 'movie', hidden, categories: cats, labels }).map((i) => i.kind)).toEqual(['all', 'favorites', 'toggle']);
-    expect(sidebarItems({ type: 'live', hidden: new Set(['favorites']), categories: cats, labels }).map((i) => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle']);
-    expect(sidebarItems({ type: 'live', hidden: new Set(['guide']), categories: cats, labels }).map((i) => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle']); // no guide rows
+    expect(sidebarItems({ type: 'live', hidden: new Set(['favorites']), categories: cats, labels }).map((i) => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle', 'all']);
+    expect(sidebarItems({ type: 'live', hidden: new Set(['guide']), categories: cats, labels }).map((i) => i.kind)).toEqual(['toggle', 'category', 'category', 'epgCategoriesToggle', 'all']); // no guide rows
   });
 
   test('filter lookup falls back to "show all"', () => {

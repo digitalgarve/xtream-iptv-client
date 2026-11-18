@@ -167,7 +167,7 @@ test('Live categories keep their preview and EPG categories show programmes sepa
   document.body.appendChild(page.el); page.mount();
   try {
     await tick(200);
-    expect(Array.from(page.el.querySelectorAll('.browse-cat-name'), node => node.textContent)).toEqual(['Categories', 'General', 'Sport', 'EPG by category']);
+    expect(Array.from(page.el.querySelectorAll('.browse-cat-name'), node => node.textContent)).toEqual(['Categories', 'General', 'Sport', 'EPG by category', 'Show all']);
     expect(catName(page, ctx)).toBe('General');
     expect(page.el.querySelector('.live-preview')).not.toBeNull();
     expect(page.el.querySelector('.epg-guide')).toBeNull();
@@ -207,10 +207,10 @@ test('large Live category EPG loads a window and restores its row after returnin
   } finally { page.destroy(); read.mockRestore(); }
 });
 
-test('Live without categories shows an empty view without inventing a programme-guide entry', async () => {
+test('Live without channels keeps show all and displays an empty view', async () => {
   const { ctx } = await setup('browse-no-live-categories');
   const page = createBrowsePage(ctx, { type: 'live' }); page.mount();
-  try { await tick(150); expect(page.el.querySelectorAll('.browse-cat')).toHaveLength(0); expect(page.el.querySelector('.browse-empty').style.display).toBe(''); }
+  try { await tick(150); expect(page.el.querySelectorAll('.browse-cat')).toHaveLength(1); expect(page.el.querySelector('.browse-empty').style.display).toBe(''); }
   finally { page.destroy(); }
 });
 
@@ -279,5 +279,22 @@ test('today EPG preloads the complete selected category, not other categories', 
     for (let i = 0; i < 50 && new Set(daily.mock.calls.map(args => args[0].key)).size < 70; i += 1) await tick(20);
     const ids = new Set(daily.mock.calls.map(args => args[0].defaultId));
     expect(ids.size).toBe(70); expect(ids.has(500)).toBe(false);
+  } finally { page.destroy(); }
+});
+
+test.each([false, true])('show all exposes uncategorized live channels (provider categories: %s)', async (hasCategories) => {
+  const { ctx, db } = await setup(`browse-uncategorized-${hasCategories}`);
+  await syncType({ db, client: {
+    getCategories: async () => hasCategories ? [{ category_id: '1', category_name: 'General' }] : [],
+    getStreams: async () => [film(10, undefined), ...(hasCategories ? [film(20, '1')] : [])],
+  }, type: 'live' });
+  const page = createBrowsePage(ctx, { type: 'live', filter: { kind: 'all' }, fromBar: true });
+  page.mount();
+  try {
+    await tick(150);
+    expect(catName(page, ctx)).toBe('Show all');
+    expect(page.el.textContent).toContain('Film 10');
+    ctx.focus.zones.get('browseGrid').onLongActivate(hasCategories ? 1 : 0);
+    expect(ctx.openEntry).toHaveBeenCalledWith(expect.objectContaining({ key: 'live:i10' }), expect.anything());
   } finally { page.destroy(); }
 });

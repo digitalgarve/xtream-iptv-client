@@ -61,16 +61,17 @@ export function createGrowingGridModel({ columns, getCount, hasMore, more }) {
 
 /**
  * Sidebar entries. Movies and series: show all, continue watching, favourites, suggestions, a "Genres"
- * entry (open by default) with genres, then expandable provider categories. Live TV shows only its categories, directly accessible.
+ * entry (open by default) with genres, then expandable provider categories. Live TV opens its categories and keeps show all available for uncategorized channels.
  */
 export function sidebarItems({ type, hidden = null, genres = [], categories = [], pinned = [], expanded = type === 'live', epgCategoriesExpanded = false, expandedOthers = new Set(), genresExpanded = true, genresLoading = false, labels }) {
   if (type === 'live') {
-    if (!categories.length) return [];
+    if (!categories.length) return [{ kind: 'all', name: labels.all }];
     return [
       { kind: 'toggle', name: labels.categories, expanded, count: categories.length },
       ...(expanded ? categories.map(category => ({ kind: 'category', id: category.id, name: category.name, depth: 1 })) : []),
       { kind: 'epgCategoriesToggle', name: labels.epgCategories, expanded: epgCategoriesExpanded, count: categories.length },
       ...(epgCategoriesExpanded ? categories.map(category => ({ kind: 'epgCategory', id: category.id, name: category.name, depth: 1 })) : []),
+      { kind: 'all', name: labels.all },
     ];
   }
   const items = [{ kind: 'all', name: labels.all }];

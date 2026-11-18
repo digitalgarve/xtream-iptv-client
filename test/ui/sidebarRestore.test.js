@@ -32,7 +32,7 @@ test('Live TV page: after opening a title and coming back, the same sidebar entr
   first.mount();
   await tick();
   const names = Array.from(first.el.querySelectorAll('.browse-cat-name')).map((n) => n.textContent);
-  expect(names).toEqual(['Categories', 'All', 'EPG by category', 'All']);
+  expect(names).toEqual(['Categories', 'All', 'EPG by category', 'All', 'Show all']);
   ctx.focus.focus('browseCategories', names.lastIndexOf('All'));
   ctx.focus.handle(Action.ENTER); // open the category EPG
   await tick();

@@ -384,6 +384,7 @@ test.each([false, true])('Studio order and visibility apply to player controls (
   const { createGuideLayoutStore } = require('../../src/services/guideLayout.js');
   const { studioLayoutKey } = require('../../src/services/studioCatalog.js');
   ctx.db = await openAppDb(`player-studio-${counter}`);
+  ctx.pdb = ctx.db;
   ctx.guideLayout = createGuideLayoutStore({ db: ctx.db });
   const { db } = await ctx.active.get();
   await dbPutMany(db, 'entries', [1, 2, 3].map(id => ({ key: `live:i${id}`, type: 'live', name: `Channel ${id}`, defaultId: id, categoryIds: ['sports'] })));

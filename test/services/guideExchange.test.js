@@ -35,6 +35,7 @@ async function fixture() {
   const guideLayout = createGuideLayoutStore({ db });
   const ctx = {
     db,
+    pdb: db,
     guideLayout,
     active: {
       get: async () => ({
@@ -138,4 +139,30 @@ test('exports thousands of individual streams, categories and channels without E
     expect(layout.order.indexOf('live:gtest')).toBe(1);
     expect(layout.hidden).not.toContain('live:gtest'); // another variant is still visible
   } finally { setHidden(null); ctx.db.close(); providerDb.close(); }
+});
+
+test('profile mappings and Studio activation do not affect other profiles on the same provider', async () => {
+  const { ctx, providerDb } = await fixture();
+  const { readStudioLiveLayout } = require('../../src/services/studioCatalog.js');
+  const aDb = await openAppDb(`studio-profile-a-${Math.random()}`);
+  const bDb = await openAppDb(`studio-profile-b-${Math.random()}`);
+  const a = { ...ctx, pdb: aDb, guideLayout: createGuideLayoutStore({ db: aDb }) };
+  const b = { ...ctx, pdb: bDb, guideLayout: createGuideLayoutStore({ db: bDb }) };
+  try {
+    await b.guideLayout.save('secret-provider', { order: ['live:i12'], hidden: [] });
+    const xmlA = await exportGuideExchange(a);
+    await expect(importGuideExchange(b, xmlA)).rejects.toThrow('No matching local export');
+    const xmlB = await exportGuideExchange(b);
+    const doc = new DOMParser().parseFromString(xmlA, 'application/xml');
+    doc.querySelector('channel').setAttribute('visible', 'false');
+    await importGuideExchange(a, new XMLSerializer().serializeToString(doc));
+    expect((await readStudioLiveLayout(a, 'secret-provider', providerDb)).map(row => row.key)).toEqual(['live:i15']);
+    expect(await readStudioLiveLayout(b, 'secret-provider', providerDb)).toBeNull();
+    expect(await readStudioLiveLayout(ctx, 'secret-provider', providerDb)).toBeNull();
+    expect(await b.guideLayout.read('secret-provider', providerDb)).toEqual({ order: ['live:i12'], hidden: [] });
+    await expect(importGuideExchange(b, xmlA)).rejects.toThrow('No matching local export');
+    await importGuideExchange(b, xmlB);
+    expect(await readStudioLiveLayout(b, 'secret-provider', providerDb)).toHaveLength(2);
+    expect(await readStudioLiveLayout(a, 'secret-provider', providerDb)).toHaveLength(1);
+  } finally { aDb.close(); bDb.close(); ctx.db.close(); providerDb.close(); }
 });

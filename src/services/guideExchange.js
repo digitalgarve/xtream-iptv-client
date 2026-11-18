@@ -40,7 +40,7 @@ export async function exportGuideExchange(ctx) {
     categories: Array.from(new Set((row.categoryIds || []).map((id) => categories.get(String(id))).filter(Boolean))),
     visible: !hidden.has(row.key) && !hidden.has(row.groupKey),
   }));
-  await kvSet(ctx.db, STATE_KEY, { providerId: current.provider.id, keys, refs, scope: 'live' });
+  await kvSet(ctx.pdb, STATE_KEY, { providerId: current.provider.id, keys, refs, scope: 'live' });
   const xml = (
     '<?xml version="1.0" encoding="UTF-8"?>\n<channel-layout version="1">\n' +
     slots
@@ -87,7 +87,7 @@ export function parseGuideExchange(xml) {
 export async function importGuideExchange(ctx, xml) {
   const rows = parseGuideExchange(xml);
   const current = await ctx.active.get();
-  const state = await kvGet(ctx.db, STATE_KEY, null);
+  const state = await kvGet(ctx.pdb, STATE_KEY, null);
   const mapping = new Map((state ? state.refs : []).map((ref, i) => [ref, state.keys[i]]));
   if (
     !current ||
@@ -123,7 +123,7 @@ export async function importGuideExchange(ctx, xml) {
   next.order.forEach((key) => { const group = byKey.get(key)?.groupKey; for (const candidate of [key, group].filter(Boolean)) { if (!seen.has(candidate)) { seen.add(candidate); projected.push(candidate); } } });
   groups.forEach((members, key) => { if (!members.some((member) => changed.has(member))) return; if (members.every((member) => hidden.has(member))) hidden.add(key); else hidden.delete(key); });
   await ctx.guideLayout.save(current.provider.id, { order: projected, hidden: Array.from(hidden) });
-  await kvSet(ctx.db, studioLayoutKey(current.provider.id), true);
+  await kvSet(ctx.pdb, studioLayoutKey(current.provider.id), true);
   await bumpCatalogRev(current.db);
   return edited.length;
 }

@@ -18,7 +18,7 @@ export const studioLayoutKey = (providerId) => `studio:live-layout:${providerId}
 
 /** After a Studio import, the all/category views use the same individual streams that were edited. */
 export async function readStudioLiveLayout(ctx, providerId, db) {
-  if (!ctx.db) return null;
-  if (!(await kvGet(ctx.db, studioLayoutKey(providerId), false))) return null;
+  if (!ctx.pdb) return null;
+  if (!(await kvGet(ctx.pdb, studioLayoutKey(providerId), false))) return null;
   return applyGuideLayout(await readStudioChannels(db), await ctx.guideLayout.read(providerId, db));
 }

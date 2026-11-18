@@ -58,7 +58,7 @@ async function request(ctx, path, options = {}) {
   }
 }
 export async function sendGuideStudio(ctx, xml) {
-  if (await kvGet(ctx.db, SESSION, null)) throw new Error('An exchange is already open');
+  if (await kvGet(ctx.pdb, SESSION, null)) throw new Error('An exchange is already open');
   const current = await ctx.active.get();
   if (!current) throw new Error('No active provider');
   const result = JSON.parse(
@@ -72,11 +72,11 @@ export async function sendGuideStudio(ctx, xml) {
   );
   if (!/^[a-f0-9]{64}$/.test(result.id)) throw new Error('Invalid Studio response');
   const origin = studioOrigin(await kvGet(ctx.db, STUDIO_URL, 'http://localhost:5173'));
-  await kvSet(ctx.db, SESSION, { id: result.id, providerId: current.provider.id, origin });
+  await kvSet(ctx.pdb, SESSION, { id: result.id, providerId: current.provider.id, origin });
   return `${origin}/client/${result.id}`;
 }
 export async function studioSession(ctx) {
-  return kvGet(ctx.db, SESSION, null);
+  return kvGet(ctx.pdb, SESSION, null);
 }
 export async function receiveGuideStudio(ctx) {
   const session = await studioSession(ctx);
@@ -100,7 +100,7 @@ export async function receiveGuideStudio(ctx) {
     error.studioDeletePending = true;
     throw error;
   }
-  await kvSet(ctx.db, SESSION, null);
+  await kvSet(ctx.pdb, SESSION, null);
 }
 export async function discardGuideStudio(ctx) {
   const session = await studioSession(ctx);
@@ -108,5 +108,5 @@ export async function discardGuideStudio(ctx) {
   const origin = studioOrigin(await kvGet(ctx.db, STUDIO_URL, 'http://localhost:5173'));
   if (session.origin !== origin) throw new Error('Studio address changed');
   await request(ctx, `/api/clients/${session.id}`, { method: 'DELETE' });
-  await kvSet(ctx.db, SESSION, null);
+  await kvSet(ctx.pdb, SESSION, null);
 }

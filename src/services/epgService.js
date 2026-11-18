@@ -1,8 +1,6 @@
-import { pageEntries } from './catalogQuery.js';
-import { dayBounds } from '../core/clock.js';
-import { runEpgForProvider, getEpgMeta, shouldSyncEpg, clearEpg, clearDayEpg } from './epgSync.js';
+import { runEpgForProvider, getEpgMeta, shouldSyncEpg, clearEpg } from './epgSync.js';
 import { openProviderDb } from '../db/providerDb.js';
-import { requestToPromise, dbGet, dbPut } from '../core/idb.js';
+import { requestToPromise, dbGet } from '../core/idb.js';
 import { log } from '../core/logger.js';
 import { isPlaceholderTitle } from './xmltv.js';
 import { EPG_CHANNELS_KEY, summaryValid, channelsBetween, spansOverlap } from './epgChannels.js';
@@ -25,10 +23,6 @@ async function programmesFor(db, channelId, now) {
 
 export function createEpgService({ active, providers, createWorker, runLocal = runEpgForProvider, now = Date.now, readyTimeoutMs = 4000, operations = null, customUrl = () => Promise.resolve(''), programmeSearch = null }) {
   let running = false;
-  let dayJobs = new WeakMap();
-  let dayRevision = 0;
-  let foregroundJobs = 0;
-  let allJob = null;
   let cancelJob = null;
   const updated = new Set();
   let titlesJob = null; // { db, promise: [{ key, title, start, stop, channelId }] }: programme titles for the search, read once per guide
@@ -59,72 +53,6 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
     if (!summaryJob || summaryJob.db !== current.db) summaryJob = { db: current.db, promise: dbGet(current.db, 'meta', EPG_CHANNELS_KEY).catch(() => null) };
     const found = await summaryJob.promise;
     return summaryValid(found, now()) ? found : null;
-  }
-
-  /** Persist one daily schedule per stream so category changes and app restarts do not refetch it. */
-  async function dayProgrammes(entry, { background = false, source = null } = {}) {
-    const current = source || await active.get();
-    if (!current || entry.defaultId === null || entry.defaultId === undefined) return [];
-    const { start: from, end: to } = dayBounds(now());
-    const revision = dayRevision;
-    const key = `epg:day:${entry.defaultId}`;
-    let jobs = dayJobs.get(current.db);
-    if (!jobs) { jobs = new Map(); dayJobs.set(current.db, jobs); }
-    if (jobs.has(key)) return jobs.get(key);
-    if (!background) foregroundJobs += 1;
-    const promise = (async () => {
-      const cached = await dbGet(current.db, 'meta', key);
-      if (cached && cached.from === from && cached.until > now()) return cached.list;
-      const inDay = list => list.filter(p => p.stop > from && p.start < to && p.stop > p.start && isReal(p));
-      let list = [];
-      if (current.client && current.client.getEpg) {
-        try { list = inDay(await current.client.getEpg(entry.defaultId)); } catch { /* XMLTV remains usable when the full-stream endpoint is unavailable. */ }
-      }
-      if (!list.length && entry.epgChannelId) list = (await programmesBetween([entry.epgChannelId], from, to)).get(entry.epgChannelId) || [];
-      if (!list.length && current.client && current.client.getShortEpg) list = await current.client.getShortEpg(entry.defaultId, 100);
-      list = inDay(list).sort((a, b) => a.start - b.start);
-      if (revision === dayRevision) await dbPut(current.db, 'meta', { key, from, until: list.length ? to : Math.min(to, now() + 5 * 60000), list });
-      return list;
-    })();
-    jobs.set(key, promise);
-    try { return await promise; } finally { jobs.delete(key); if (!background) foregroundJobs -= 1; }
-  }
-
-  function stopPrefetch() { if (allJob) { allJob.cancelled = true; if (allJob.end) allJob.end(); } }
-
-  /** One low-priority request at a time; visible/category requests never wait for this scan. */
-  async function prefetchAll() {
-    const current = await active.get();
-    if (!current) { stopPrefetch(); return; }
-    if (allJob && !allJob.cancelled && allJob.db === current.db && allJob.client === current.client) return allJob.promise;
-    stopPrefetch();
-    const job = { db: current.db, client: current.client, cancelled: false, promise: null };
-    const revision = dayRevision;
-    allJob = job;
-    const stillCurrent = async () => {
-      if (job.cancelled || revision !== dayRevision) return false;
-      const source = await active.get();
-      return source && source.db === current.db && source.client === current.client;
-    };
-    const yieldUi = () => new Promise(resolve => setTimeout(resolve, 25));
-    job.promise = (async () => {
-      const end = operations ? operations.start('epgDay', { cancel: stopPrefetch }) : () => {};
-      job.end = end;
-      try {
-        for (let offset = 0; await stillCurrent(); offset += 100) {
-          const page = await pageEntries(current.db, { type: 'live', offset, limit: 100 });
-          for (const entry of page.entries) {
-            while (foregroundJobs && await stillCurrent()) await yieldUi();
-            if (!(await stillCurrent())) return;
-            try { await dayProgrammes(entry, { background: true, source: current }); }
-            catch (error) { log.warn('Background daily EPG failed', error && error.code || 'UNKNOWN'); }
-            await yieldUi();
-          }
-          if (!page.hasMore) break;
-        }
-      } finally { end(); if (allJob === job) allJob = null; }
-    })();
-    return job.promise;
   }
 
   async function nowNext(channelId) {
@@ -256,9 +184,6 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
     /** Deletes the active provider's guide (the next start, or the update button, downloads it again). */
     async clear() {
       if (cancelJob) cancelJob();
-      stopPrefetch();
-      dayJobs = new WeakMap();
-      dayRevision += 1;
       const current = await active.get();
       if (!current) return;
       await clearEpg(current.db);
@@ -267,9 +192,6 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
       updated.forEach((handler) => handler());
     },
     nowNext,
-    dayProgrammes,
-    prefetchAll,
-    stopPrefetch,
     programmesBetween,
     /**
      * Genres of the guide (XMLTV categories): `{ genres: [{ key, name }] by name, byChannel: Map(epgChannelId → [key]) }`, empty when the
@@ -347,7 +269,6 @@ export function createEpgService({ active, providers, createWorker, runLocal = r
       const db = await openProviderDb(provider.id);
       let due;
       try {
-        if (force) { stopPrefetch(); dayJobs = new WeakMap(); dayRevision += 1; await clearDayEpg(db); }
         due = force || shouldSyncEpg(await getEpgMeta(db), now());
       } finally {
         db.close();

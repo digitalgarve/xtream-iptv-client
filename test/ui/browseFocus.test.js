@@ -248,37 +248,41 @@ test('sidebar caches do not cross adult and kids visibility or retain old parent
   }
 });
 
-test('EPG category falls back to short EPG for channels with missing XMLTV data or IDs', async () => {
-  const { ctx, db } = await setup('browse-epg-provider-fallback');
-  await syncType({ db, client: { getCategories: async () => [{ category_id: '1', category_name: 'General' }], getStreams: async () => [{ ...film(1, '1'), epg_channel_id: 'one' }, film(2, '1'), { ...film(3, '1'), epg_channel_id: 'three' }] }, type: 'live' });
-  const programme = title => ({ title, start: Date.now() - 1000, stop: Date.now() + 3600000 });
-  const short = jest.fn(async id => [programme(`Direct ${id}`)]);
+test('category guide shares XMLTV data by EPG ID across HD/SD, retaining channels without data', async () => {
+  const { ctx, db } = await setup('browse-shared-xmltv');
+  await syncType({ db, client: {
+    getCategories: async () => [{ category_id: '1', category_name: 'General' }],
+    getStreams: async () => [
+      { ...film(1, '1'), epg_channel_id: 'shared' },
+      { ...film(2, '1'), epg_channel_id: 'shared' },
+      film(3, '1'),
+    ],
+  }, type: 'live' });
+  const { dbPutMany } = require('../../src/core/idb.js');
+  const { createEpgService } = require('../../src/services/epgService.js');
+  await dbPutMany(db, 'epg', [{ channelId: 'shared', start: Date.now() - 1000, stop: Date.now() + 3600000, title: 'Shared programme' }]);
+  const short = jest.fn();
   ctx.active.get = async () => ({ provider: { id: 'p' }, db, client: { getShortEpg: short } });
-  ctx.epg = { programmesBetween: async () => new Map([['three', [programme('Local XMLTV')]]]) };
-  ctx.router = { push: jest.fn() };
-  const page = createBrowsePage(ctx, { type: 'live', filter: { kind: 'epgCategory', id: '1' } }); page.mount();
+  ctx.epg = createEpgService({ active: ctx.active, providers: {} });
+  const read = jest.spyOn(ctx.epg, 'programmesBetween');
+  const page = createBrowsePage(ctx, { type: 'live', filter: { kind: 'epgCategory', id: '1' } });
+  page.mount();
   try {
     await tick(200);
-    expect(short.mock.calls.map(args => args[0]).sort()).toEqual([1, 2]);
-    const text = page.el.querySelector('.epg-guide').textContent;
-    expect(text).toContain('Direct 1'); expect(text).toContain('Direct 2'); expect(text).toContain('Local XMLTV');
-    const zone = ctx.focus.zones.get('browseGuide'); zone.model.navigate('down', 0);
-    const { Action } = await import('../../src/core/input.js'); ctx.focus.handle(Action.ENTER);
-    expect(ctx.openEntry).toHaveBeenCalledWith(expect.objectContaining({ key: 'live:i2', defaultId: 2, epgChannelId: null }), { play: true, section: undefined, live: { categoryId: '1', offset: 1 } }); // original entry goes through the existing parental gate
-
-  } finally { page.destroy(); }
-});
-
-test('today EPG preloads the complete selected category, not other categories', async () => {
-  const { ctx, db } = await setup('browse-epg-preload-category');
-  await syncType({ db, client: { getCategories: async () => [{ category_id: '1', category_name: 'General' }, { category_id: '2', category_name: 'Other' }], getStreams: async () => Array.from({ length: 70 }, (_, i) => film(i + 1, '1')).concat([film(500, '2')]) }, type: 'live' });
-  const daily = jest.fn(async () => []);
-  ctx.epg = { dayProgrammes: daily };
-  const page = createBrowsePage(ctx, { type: 'live', filter: { kind: 'epgCategory', id: '1' } }); page.mount();
-  try {
-    for (let i = 0; i < 50 && new Set(daily.mock.calls.map(args => args[0].key)).size < 70; i += 1) await tick(20);
-    const ids = new Set(daily.mock.calls.map(args => args[0].defaultId));
-    expect(ids.size).toBe(70); expect(ids.has(500)).toBe(false);
+    const rows = Array.from(page.el.querySelectorAll('.guide-row'));
+    expect(rows).toHaveLength(3);
+    expect(rows.filter(row => row.textContent.includes('Shared programme'))).toHaveLength(2);
+    const emptyRow = rows.find(row => row.textContent.includes('Film 3'));
+    expect(emptyRow.textContent).toContain('No programme information');
+    expect(emptyRow.querySelectorAll('.epg-prog:not(.empty)')).toHaveLength(0);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls[0][0]).toEqual(['shared']);
+    expect(short).not.toHaveBeenCalled();
+    const zone = ctx.focus.zones.get('browseGuide');
+    zone.model.navigate('down', 0);
+    const { Action } = await import('../../src/core/input.js');
+    ctx.focus.handle(Action.ENTER);
+    expect(ctx.openEntry).toHaveBeenCalledWith(expect.objectContaining({ type: 'live', epgChannelId: 'shared' }), expect.objectContaining({ play: true }));
   } finally { page.destroy(); }
 });
 

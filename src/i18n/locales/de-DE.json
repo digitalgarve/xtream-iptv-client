@@ -454,7 +454,6 @@
   "livePreview.help": "OK: Vollbild · Lange OK: Senderdetails",
   "epg.noData": "Keine Programmdaten",
   "epg.byCategory": "EPG nach Kategorie",
-  "operations.epgDay": "EPG-Tagesdaten im Hintergrund",
   "settings.studioUrl": "Channel Studio: Serveradresse",
   "settings.studioSend": "Sender im Browser sortieren",
   "settings.studioReceive": "Sortierung übernehmen und Serverdatei löschen",

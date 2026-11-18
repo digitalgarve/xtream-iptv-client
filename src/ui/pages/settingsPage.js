@@ -262,7 +262,7 @@ export function createSettingsPage(ctx) {
   }
   if (ctx.epg) {
     catalogRows.push(
-      rowOf(panel.epgButtons.refresh, async () => { ctx.epg.maybeSync({ force: true }).then(() => ctx.epg.prefetchAll()).catch(() => undefined); }),
+      rowOf(panel.epgButtons.refresh, async () => ctx.epg.maybeSync({ force: true }).catch(() => undefined)),
       rowOf(panel.epgButtons.remove, () => removeEpg(), 'left'),
     );
   }

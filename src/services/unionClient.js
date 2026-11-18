@@ -38,10 +38,6 @@ export function createUnionClient(main, others) {
       const r = route(id);
       return recodeEpisodes(await r.client.getSeriesInfo(r.id), r.slot);
     },
-    getEpg(id) {
-      const r = route(id);
-      return r.client.getEpg ? r.client.getEpg(r.id) : Promise.resolve([]);
-    },
     getShortEpg(id, ...rest) {
       const r = route(id);
       return r.client.getShortEpg ? r.client.getShortEpg(r.id, ...rest) : Promise.resolve([]);

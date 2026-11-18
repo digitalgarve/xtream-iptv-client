@@ -454,7 +454,6 @@
   "livePreview.help": "OK: full screen · Hold OK: channel details",
   "epg.noData": "No programme information",
   "epg.byCategory": "EPG by category",
-  "operations.epgDay": "Daily EPG in background",
   "settings.studioUrl": "Channel Studio: server address",
   "settings.studioSend": "Sort channels in browser",
   "settings.studioReceive": "Apply order and delete server file",

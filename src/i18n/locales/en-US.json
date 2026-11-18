@@ -454,6 +454,5 @@
   "livePreview.help": "OK: full screen · Hold OK: channel details",
   "epg.noData": "No programme information",
   "epg.byCategory": "EPG by category",
-  "operations.epgDay": "Daily EPG in background",
   "livePreview.unavailable": "Preview unavailable for this channel"
 }

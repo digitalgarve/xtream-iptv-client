@@ -1,4 +1,3 @@
-import { isPlaceholderTitle } from '../../services/xmltv.js';
 import { continueWatching } from '../../services/continueWatching.js';
 import { focusOnBar } from '../rowFocus.js';
 import { h } from '../dom.js';
@@ -664,51 +663,14 @@ export function createBrowsePage(ctx, params = {}) {
     };
     if (kind.indexOf('epgCategory:') === 0) {
       const categoryId = kind.slice('epgCategory:'.length);
-      const originals = new Map();
-      const channelById = new Map();
       return createEpgGuide({
         ...common,
         emptyText: t('epg.noData'),
         today: true,
-        loadRows: async (offset, limit) => {
-          const result = await readEntries({ kind: 'category', id: categoryId }, offset, limit);
-          return { ...result, entries: result.entries.map(entry => {
-            const viewId = entry.epgChannelId || `@stream:${entry.key}`;
-            originals.set(entry.key, entry); channelById.set(viewId, entry);
-            return { ...entry, epgChannelId: viewId };
-          }) };
-        },
-        onOpen: (entry, row) => ctx.openEntry(originals.get(entry.key) || entry, { play: true, section: params.section, live: { categoryId, offset: row } }),
+        loadRows: (offset, limit) => readEntries({ kind: 'category', id: categoryId }, offset, limit),
+        onOpen: (entry, row) => ctx.openEntry(entry, { play: true, section: params.section, live: { categoryId, offset: row } }),
         countRows: () => countEntries(db, { type: 'live', categoryId }),
-        programmes: async (ids, from, to) => {
-          if (ctx.epg && ctx.epg.dayProgrammes) {
-            const found = new Map();
-            for (let i = 0; i < ids.length && !destroyed; i += 4) {
-              await Promise.all(ids.slice(i, i + 4).map(async id => {
-                const entry = channelById.get(id);
-                if (entry) found.set(id, (await ctx.epg.dayProgrammes(entry).catch(() => [])).filter(p => p.stop > from && p.start < to));
-              }));
-            }
-            return found;
-          }
-          const localIds = ids.filter(id => channelById.get(id)?.epgChannelId);
-          const found = ctx.epg && ctx.epg.programmesBetween ? await ctx.epg.programmesBetween(localIds, from, to).catch(() => new Map()) : new Map();
-          const missing = ids.filter(id => !(found.get(id) || []).length);
-          if (!missing.length) return found;
-          const current = await ctx.active.get();
-          if (!current?.client?.getShortEpg) return found;
-          for (let i = 0; i < missing.length && !destroyed; i += 4) {
-            await Promise.all(missing.slice(i, i + 4).map(async id => {
-              const entry = channelById.get(id);
-              if (!entry || entry.defaultId === null || entry.defaultId === undefined) return;
-              try {
-                const list = await current.client.getShortEpg(entry.defaultId);
-                found.set(id, list.filter(p => p.stop > from && p.start < to && p.stop > p.start && !isPlaceholderTitle(p.title)));
-              } catch { /* Keep the channel visible when neither EPG source is available. */ }
-            }));
-          }
-          return found;
-        },
+        programmes: (ids, from, to) => (ctx.epg && ctx.epg.programmesBetween ? ctx.epg.programmesBetween(ids, from, to) : Promise.resolve(new Map())),
       });
     }
     if (kind.indexOf('epgGenre:') === 0) {
@@ -785,21 +747,6 @@ export function createBrowsePage(ctx, params = {}) {
       await guide.start();
       if (destroyed) return;
       if (guideState && (kind === 'guide' || kind.startsWith('epgCategory:'))) { guide.restore(guideState); guideState = null; }
-    }
-    if (kind.startsWith('epgCategory:') && ctx.epg && ctx.epg.dayProgrammes) {
-      const shown = guide;
-      const categoryId = kind.slice('epgCategory:'.length);
-      const stillShown = () => !destroyed && guide === shown && guideHost.style.display !== 'none';
-      // Warm only this category, four streams at a time; leaving it stops queued work.
-      (async () => {
-        for (let offset = 0; stillShown(); offset += 40) {
-          const result = await readEntries({ kind: 'category', id: categoryId }, offset, 40);
-          for (let i = 0; i < result.entries.length && stillShown(); i += 4) {
-            await Promise.all(result.entries.slice(i, i + 4).map(entry => ctx.epg.dayProgrammes(entry).catch(() => [])));
-          }
-          if (!result.hasMore) break;
-        }
-      })().catch(err => log.warn('Category EPG preload failed', err && err.code));
     }
     count.textContent = formatNumber(guide.count);
     renderHead();

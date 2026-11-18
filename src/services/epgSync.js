@@ -37,15 +37,9 @@ export function liveChannelIds(db) {
 
 export const shouldSyncEpg = (meta, now = Date.now()) => !meta || now - meta.lastSync >= EPG_TTL_MS;
 
-export async function clearDayEpg(db) {
-  const keys = await dbGetAllKeys(db, 'meta', { range: IDBKeyRange.bound('epg:day:', 'epg:day:\uffff') });
-  await dbDeleteMany(db, 'meta', keys);
-}
-
 /** Deletes the downloaded guide (programmes, channel summary, last download): the next start downloads it again. */
 export async function clearEpg(db) {
   await dbClear(db, 'epg');
-  await clearDayEpg(db);
   await dbDelete(db, 'meta', EPG_CHANNELS_KEY);
   await dbDelete(db, 'meta', META_KEY);
 }

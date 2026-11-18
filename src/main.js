@@ -301,7 +301,7 @@ async function boot() {
       name: 'epg',
       priority: Priority.EPG,
       run: () => {
-        epg.maybeSync().catch(() => undefined).then(() => epg.prefetchAll()).catch((err) => log.warn('Background EPG preload failed', err && err.code || 'UNKNOWN'));
+        epg.maybeSync().catch(() => undefined);
       },
     });
   // Favourite categories and genres show how many titles they hold; a grey sweep stands in until it is known.

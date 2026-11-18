@@ -598,18 +598,13 @@ export function createSettingsPage(ctx) {
     }
   }
   async function addProfile() {
-    let main = null;
-    if (!(await ctx.profiles.list()).length) {
-      // The first one: the user of always becomes the main profile (an admin) first.
-      main = await openProfileForm(ctx, { title: t('profiles.yours'), roles: false, kidsAllowed: false });
-      if (!main) return;
-    }
-    const data = await openProfileForm(ctx, { title: t('profiles.add'), roles: true });
+    const first = !(await ctx.profiles.list()).length;
+    const data = await openProfileForm(ctx, { title: t(first ? 'profiles.yours' : 'profiles.add'), roles: !first, kidsAllowed: !first });
     if (!data) return;
-    await ctx.profiles.add(data, main);
-    if (main) {
+    const saved = await ctx.profiles.add(data);
+    if (first) {
       ctx.profiles.choose(MAIN_ID); // this run goes on as the main profile
-      ctx.profile = await ctx.profiles.get(MAIN_ID);
+      ctx.profile = saved;
     }
     ctx.notices.success(t('notice.added'), { key: 'profile' });
     if (ctx.refreshTopbar) ctx.refreshTopbar(); // the avatar of the profile in use now shows in the bar

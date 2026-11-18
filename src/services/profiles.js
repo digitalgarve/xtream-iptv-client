@@ -4,7 +4,7 @@ import { openAppDb, APP_DB_NAME } from '../db/appDb.js';
 import { hashPin } from './parental.js';
 
 /**
- * Profiles (Netflix style). Until a second profile is created there is none to choose and the app is as it always was: that user is the
+ * Profiles (Netflix style). The first profile names the existing user; until another is created there is none to choose. That user is the
  * main profile (`MAIN_ID`), whose data stays where it always was (the app database). Every other profile has a database of its own with
  * the same stores (`profileDbName`), where its per-profile data lives: progress and watched titles, favourites, collections, pinned
  * entries, scheduled viewing, its Trakt account, its parental PIN, the order of the guide rows. Shared by all: providers and catalog,
@@ -53,7 +53,7 @@ export function createProfiles({ db, openDb = openAppDb, removeDb = deleteDb, ra
   const clean = (p) => ({ id: p.id, name: String(p.name || '').trim(), avatar: AVATARS.indexOf(p.avatar) >= 0 ? p.avatar : AVATARS[0], kids: Boolean(p.kids), admin: Boolean(p.admin) && !p.kids, language: p.language || null, pin: p.pin || null });
 
   const service = {
-    /** Every profile; empty while there is only the user of always (no profiles made yet). */
+    /** Every profile; empty until the existing user creates their main profile. */
     list: () => load().then((all) => all.slice()),
     async get(id) {
       return (await load()).find((p) => p.id === id) || null;
@@ -63,13 +63,12 @@ export function createProfiles({ db, openDb = openAppDb, removeDb = deleteDb, ra
       return (await load()).length > 1;
     },
     /**
-     * Adds a profile ({ name, avatar, kids, admin, pin }). The first one also makes the main profile (the user of always, an admin) out of
-     * `main` ({ name, avatar }). Resolves with the new profile.
+     * Adds one profile ({ name, avatar, kids, admin, pin }). The first is the main profile (the existing user, always an adult admin).
+     * Resolves with the new profile.
      */
-    async add(data, main = null) {
+    async add(data) {
       const all = (await load()).slice();
-      if (!all.length) all.push(clean({ id: MAIN_ID, name: (main && main.name) || 'Main', avatar: (main && main.avatar) || AVATARS[0], admin: true }));
-      const profile = clean({ ...data, id: newId(), pin: pinRecord(data.pin) });
+      const profile = clean({ ...data, ...(!all.length ? { id: MAIN_ID, admin: true, kids: false } : { id: newId() }), pin: pinRecord(data.pin) });
       all.push(profile);
       await save(all);
       return profile;
@@ -87,7 +86,7 @@ export function createProfiles({ db, openDb = openAppDb, removeDb = deleteDb, ra
       await save(all);
       return cleaned;
     },
-    /** Deletes a profile and its data (never the main one, nor the last admin). Back to no profiles when only the main one is left. */
+    /** Deletes a profile and its data (never the main one, nor the last admin). Keeps the main profile when the last additional profile is removed. */
     async remove(id) {
       if (id === MAIN_ID) return false;
       const all = await load();
@@ -95,7 +94,7 @@ export function createProfiles({ db, openDb = openAppDb, removeDb = deleteDb, ra
       if (!gone) return false;
       const rest = all.filter((p) => p.id !== id);
       if (gone.admin && !rest.some((p) => p.admin)) throw Object.assign(new Error('The last admin'), { code: 'LAST_ADMIN' });
-      await save(rest.length > 1 ? rest : []);
+      await save(rest);
       await removeDb(profileDbName(id)).catch(() => undefined);
       return true;
     },
@@ -139,7 +138,7 @@ export function createProfiles({ db, openDb = openAppDb, removeDb = deleteDb, ra
     async current() {
       const all = await load();
       if (!all.length) return { id: MAIN_ID, name: '', avatar: AVATARS[0], kids: false, admin: true, language: null, pin: null, implicit: true };
-      return all.find((p) => p.id === service.chosenId()) || null;
+      return all.find((p) => p.id === service.chosenId()) || (all.length === 1 && !all[0].pin ? all[0] : null);
     },
   };
   return service;

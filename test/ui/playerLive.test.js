@@ -375,3 +375,42 @@ test('CH+/CH− stays inside the selected category and reports the new list posi
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'live:i1' }), { categoryId: 'sports', offset: 0 });
   } finally { player.destroy(); }
 });
+
+test.each([false, true])('Studio order and visibility apply to player controls (category: %s)', async (category) => {
+  const { page, ctx, engine } = await setup();
+  page.destroy();
+  const { openAppDb } = require('../../src/db/appDb.js');
+  const { kvSet } = require('../../src/db/kv.js');
+  const { createGuideLayoutStore } = require('../../src/services/guideLayout.js');
+  const { studioLayoutKey } = require('../../src/services/studioCatalog.js');
+  ctx.db = await openAppDb(`player-studio-${counter}`);
+  ctx.guideLayout = createGuideLayoutStore({ db: ctx.db });
+  const { db } = await ctx.active.get();
+  await dbPutMany(db, 'entries', [1, 2, 3].map(id => ({ key: `live:i${id}`, type: 'live', name: `Channel ${id}`, defaultId: id, categoryIds: ['sports'] })));
+  await dbPutMany(db, 'entry_cat', [1, 2, 3].map(id => ({ key: `live:i${id}|sports`, entryKey: `live:i${id}`, type: 'live', categoryId: 'sports', added: id })));
+  await ctx.guideLayout.save('p', { order: ['live:i3', 'live:i1'], hidden: ['live:i2'] });
+  await kvSet(ctx.db, studioLayoutKey('p'), true);
+  const changed = jest.fn();
+  const player = createPlayerPage(ctx, { type: 'live', entryKey: 'live:i3', title: 'Channel 3', playlist: [{ id: 3, ext: '' }], live: category ? { categoryId: 'sports', offset: 0 } : null, onChannelChange: changed });
+  player.mount();
+  try {
+    await wait();
+    player.onAction(Action.CHANNEL_UP); await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/1', expect.any(Object));
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'live:i1' }), category ? { categoryId: 'sports', offset: 1 } : null);
+    player.onAction(Action.CHANNEL_DOWN); await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/3', expect.any(Object));
+    player.onAction(Action.ENTER);
+    player.onAction(Action.RIGHT); // Previous channel
+    await wait();
+    expect(focusedTip(player)).toBe('Channel 1');
+    player.onAction(Action.RIGHT); // Next channel
+    await wait();
+    expect(focusedTip(player)).toBe('Channel 1');
+    player.onAction(Action.ENTER); await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/1', expect.any(Object));
+    player.onAction(Action.CHANNEL_DOWN); await wait();
+    expect(engine.start).toHaveBeenLastCalledWith('http://h/live/3', expect.any(Object));
+    expect(engine.start.mock.calls.slice(1).some(([url]) => url === 'http://h/live/2')).toBe(false);
+  } finally { player.destroy(); ctx.db.close(); }
+});

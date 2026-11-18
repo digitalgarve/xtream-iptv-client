@@ -1,3 +1,4 @@
+import { readStudioLiveLayout } from '../../services/studioCatalog.js';
 import { h } from '../dom.js';
 import { icon as iconNode } from '../icons.js';
 import { createPlayerButton, setPlayerButtonIcon, setPlayerButtonLabel } from '../atoms/playerButton.js';
@@ -13,7 +14,7 @@ import { resolveAudioSelection } from '../../services/audioSelection.js';
 import { youtubeStreamUrl } from '../../services/trailer.js';
 import { formatClockTime } from '../../core/clock.js';
 import { watchKey, shouldResume } from '../../services/watchStore.js';
-import { pageEntries, getEntry, liveSequence, neighborKey } from '../../services/catalogQuery.js';
+import { pageEntries, getEntry, liveSequence, neighborKey, LIVE_ALL } from '../../services/catalogQuery.js';
 import { streamLabel, sourceNames } from '../streamLabel.js';
 import { portableKeyFor } from '../../services/shareKeys.js';
 import { createPlayerSubtitles } from './player/subtitles.js';
@@ -780,10 +781,17 @@ export function createPlayerPage(ctx, params) {
     paintFocus();
   }
 
+  let studioRowsJob = null;
+  async function studioChannels(categoryId = LIVE_ALL) {
+    if (!studioRowsJob) studioRowsJob = ctx.active.get().then(({ provider, db }) => readStudioLiveLayout(ctx, provider.id, db));
+    const rows = await studioRowsJob;
+    return rows && categoryId !== LIVE_ALL ? rows.filter(row => (row.categoryIds || []).some(id => String(id) === String(categoryId))) : rows;
+  }
+
   /** The key `delta` channels away in "show all" (the list is read once per player). */
   async function neighbor(delta) {
     if (!liveEntry) return null;
-    if (!sequence) sequence = ctx.active.get().then(({ db }) => liveSequence(db)).catch(() => []);
+    if (!sequence) sequence = studioChannels().then(rows => rows ? rows.map(row => row.key) : ctx.active.get().then(({ db }) => liveSequence(db))).catch(() => []);
     return neighborKey(await sequence, liveEntry.key, delta, liveEntry.groupKey || null);
   }
 
@@ -796,6 +804,11 @@ export function createPlayerPage(ctx, params) {
     for (let hops = 0; key && hops < 50 && !destroyed; hops += 1) {
       const entry = await getEntry(db, key).catch(() => null);
       if (entry && !blockedForKids(entry)) {
+        const rows = live && await studioChannels(live.categoryId);
+        if (rows) {
+          const offset = rows.findIndex(row => row.key === entry.key);
+          live = offset < 0 ? null : { ...live, offset };
+        }
         switchTo(entry);
         return;
       }
@@ -834,8 +847,9 @@ export function createPlayerPage(ctx, params) {
       return;
     }
     const { db } = await ctx.active.get();
-    const page = await pageEntries(db, { type: 'live', categoryId: live.categoryId, offset: Math.max(0, live.offset + delta), limit: 1 });
-    const entry = page.entries[0];
+    const rows = await studioChannels(live.categoryId);
+    const offset = Math.max(0, live.offset + delta);
+    const entry = rows ? rows[offset] : (await pageEntries(db, { type: 'live', categoryId: live.categoryId, offset, limit: 1 })).entries[0];
     if (!entry || destroyed) return;
     live.offset = Math.max(0, live.offset + delta);
     if (blockedForKids(entry)) {
